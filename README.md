@@ -23,7 +23,7 @@
 ## Installation
 
 ```bash
-git clone <repo-url> recon
+git clone (https://github.com/0xN0RMXL/recon) recon
 cd recon
 bash install.sh
 ```
