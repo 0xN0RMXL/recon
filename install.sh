@@ -14,9 +14,13 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
+
+# Detect actual user context for installs (handles sudo)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TOOLS_DIR="$HOME/tools"
-LOCAL_BIN="$HOME/.local/bin"
+ACTUAL_USER="${SUDO_USER:-$(whoami)}"
+ACTUAL_HOME=$(getent passwd "$ACTUAL_USER" | cut -d: -f6)
+TOOLS_DIR="$ACTUAL_HOME/tools"
+LOCAL_BIN="$ACTUAL_HOME/.local/bin"
 
 # ─── HELPERS ─────────────────────────────────────────────────
 info()    { echo -e "${CYAN}[*]${RESET} $1"; }
@@ -52,7 +56,7 @@ detect_os() {
 install_system_packages() {
   info "Installing system packages..."
   
-  local packages="git curl wget jq python3 python3-pip python3-venv unzip bc parallel nmap masscan chromium-browser"
+  local packages="git curl wget jq python3 python3-pip python3-venv unzip bc parallel nmap masscan chromium-browser libpcap-dev"
   
   if command -v apt-get &>/dev/null; then
     sudo apt-get update -qq 2>/dev/null
@@ -88,21 +92,19 @@ install_go() {
   sudo tar -C /usr/local -xzf "/tmp/$GO_TARBALL"
   rm -f "/tmp/$GO_TARBALL"
 
-  # Add to PATH
-  export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
 
-  # Persist in shell configs
-  for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+  # Add to PATH
+  export PATH=$PATH:/usr/local/go/bin:$ACTUAL_HOME/go/bin
+
+  # Persist in actual user's shell configs
+  USER_BASHRC="$ACTUAL_HOME/.bashrc"
+  USER_ZSHRC="$ACTUAL_HOME/.zshrc"
+  for rc in "$USER_BASHRC" "$USER_ZSHRC"; do
     if [ -f "$rc" ]; then
       grep -q '/usr/local/go/bin' "$rc" 2>/dev/null || \
-        echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> "$rc"
+        echo 'export PATH=$PATH:/usr/local/go/bin:'"$ACTUAL_HOME"'/go/bin' >> "$rc"
     fi
   done
-
-  if [ -f "$HOME/.bashrc" ]; then
-    # shellcheck source=/dev/null
-    source "$HOME/.bashrc" 2>/dev/null || true
-  fi
 
   success "Go $GO_VERSION installed"
 }
@@ -111,7 +113,8 @@ install_go() {
 install_go_tools() {
   info "Installing Go tools (this may take a while)..."
 
-  export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+
+  export PATH=$PATH:/usr/local/go/bin:$ACTUAL_HOME/go/bin
 
   if [ ! -f "$SCRIPT_DIR/go-tools.txt" ]; then
     error "go-tools.txt not found!"
@@ -126,12 +129,26 @@ install_go_tools() {
     [ -z "$tool" ] && continue
     [[ "$tool" =~ ^# ]] && continue
     count=$((count + 1))
+    # Extract a human-readable tool name from module path
+    # Priority: /cmd/<name> → last non-version segment → fallback
     local tool_name
-    tool_name=$(basename "$tool" | cut -d@ -f1)
+    tool_name=$(echo "$tool" | grep -oE '/cmd/[^/@]+' | sed 's|/cmd/||')
+    if [ -z "$tool_name" ]; then
+      # Strip version tag, then get last path segment, skip vN segments
+      tool_name=$(echo "$tool" | sed 's/@.*//' | tr '/' '\n' \
+        | grep -v -E '^v[0-9]+$' | grep -v '^\.\.\.$' | tail -1)
+    fi
+    [ -z "$tool_name" ] && tool_name="$tool"
     info "[$count/$total] Installing $tool_name..."
-    go install "$tool" 2>/dev/null && \
-      success "  $tool_name installed" || \
-      warn "  $tool_name failed to install"
+    if output=$(sudo -u "$ACTUAL_USER" go install "$tool" 2>&1); then
+      if sudo -u "$ACTUAL_USER" command -v "$tool_name" &>/dev/null; then
+        success "  $tool_name installed"
+      else
+        warn "  $tool_name: install reported success but binary not in PATH"
+      fi
+    else
+      warn "  $tool_name failed: $output"
+    fi
   done < "$SCRIPT_DIR/go-tools.txt"
 }
 
@@ -188,30 +205,50 @@ download_binaries() {
   export PATH=$PATH:$LOCAL_BIN
 
   # Ensure .local/bin is in PATH permanently
-  for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+  for rc in "$ACTUAL_HOME/.bashrc" "$ACTUAL_HOME/.zshrc"; do
     [ -f "$rc" ] && grep -q '.local/bin' "$rc" 2>/dev/null || \
-      echo 'export PATH=$PATH:$HOME/.local/bin' >> "$rc" 2>/dev/null
+      echo 'export PATH=$PATH:'"$ACTUAL_HOME"'/.local/bin' >> "$rc" 2>/dev/null
   done
 
   # findomain
   if ! command -v findomain &>/dev/null; then
     info "Downloading findomain..."
+    local fd_installed=false
+
+    # Strategy 1: GitHub API (asset name is 'findomain-linux', plain binary, no zip)
     local fd_url
-    fd_url=$(curl -s https://api.github.com/repos/Findomain/Findomain/releases/latest \
-      | jq -r '.assets[] | select(.name | test("linux-amd64")) | .browser_download_url' 2>/dev/null | head -1)
+    fd_url=$(curl -s "https://api.github.com/repos/Findomain/Findomain/releases/latest" \
+      | jq -r '.assets[] | select(.name == "findomain-linux") | .browser_download_url' \
+      2>/dev/null | head -1)
+
     if [ -n "$fd_url" ]; then
-      wget -q "$fd_url" -O /tmp/findomain.zip 2>/dev/null
-      unzip -oq /tmp/findomain.zip -d /tmp/ 2>/dev/null
-      chmod +x /tmp/findomain 2>/dev/null
-      mv /tmp/findomain "$LOCAL_BIN/" 2>/dev/null
-      rm -f /tmp/findomain.zip
+      wget -q "$fd_url" -O "$LOCAL_BIN/findomain" 2>/dev/null && \
+        chmod +x "$LOCAL_BIN/findomain" && fd_installed=true
+    fi
+
+    # Strategy 2: pinned direct URL (fallback if API rate-limited)
+    if [ "$fd_installed" = false ]; then
+      warn "GitHub API failed, trying direct URL fallback..."
+      wget -q "https://github.com/Findomain/Findomain/releases/download/9.0.4/findomain-linux" \
+        -O "$LOCAL_BIN/findomain" 2>/dev/null && \
+        chmod +x "$LOCAL_BIN/findomain" && fd_installed=true
+    fi
+
+    # Strategy 3: apt install
+    if [ "$fd_installed" = false ]; then
+      warn "Direct download failed, trying apt..."
+      sudo apt-get install -y -qq findomain 2>/dev/null && fd_installed=true
+    fi
+
+    if [ "$fd_installed" = true ]; then
       success "findomain installed"
     else
-      warn "findomain download failed — installing manually may be needed"
+      warn "findomain could not be installed automatically. Install manually: https://github.com/Findomain/Findomain/releases"
     fi
   else
     success "findomain already installed"
   fi
+
 
   # kiterunner
   if ! command -v kr &>/dev/null; then
@@ -428,6 +465,10 @@ main() {
   api_key_reminder
 
   echo ""
+  # Ensure main scripts are executable
+  chmod +x "$SCRIPT_DIR/recon.sh" "$SCRIPT_DIR/doctor.sh" "$SCRIPT_DIR/update.sh" 2>/dev/null && \
+    success "Framework scripts are now executable" || warn "Could not set executable bit"
+
   success "Installation complete! Run: ./recon.sh"
   echo ""
 }

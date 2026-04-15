@@ -1,7 +1,8 @@
-trufflehog
+trufflehog3
 arjun
 dirsearch
 waymore
 paramspider
 playwright
 beautifulsoup4
+requests

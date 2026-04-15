@@ -13,9 +13,9 @@ github.com/tomnomnom/httprobe@latest
 github.com/lc/gau/v2/cmd/gau@latest
 github.com/hakluke/hakrawler@latest
 github.com/hakluke/hakrevdns@latest
-github.com/003random/getJS@latest
+github.com/tomnomnom/gron@latest
 github.com/lc/subjs@latest
-github.com/owasp-amass/amass/v4/...@master
+github.com/owasp-amass/amass/v4/cmd/amass@master
 github.com/sensepost/gowitness@latest
 github.com/jaeles-project/gospider@latest
 github.com/hahwul/dalfox/v2@latest

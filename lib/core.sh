@@ -12,32 +12,33 @@ init_workspace() {
 
   log info "Initializing workspace: $WORKDIR"
 
-  # Create the full output directory tree per §8
-  mkdir -p "$WORKDIR/meta"
-  mkdir -p "$WORKDIR/01_subdomains/passive"
-  mkdir -p "$WORKDIR/01_subdomains/active"
-  mkdir -p "$WORKDIR/01_subdomains/fuzzing"
-  mkdir -p "$WORKDIR/02_dns"
-  mkdir -p "$WORKDIR/03_live_hosts"
-  mkdir -p "$WORKDIR/04_ports"
-  mkdir -p "$WORKDIR/05_urls/raw"
-  mkdir -p "$WORKDIR/05_urls/categorized"
-  mkdir -p "$WORKDIR/06_content"
-  mkdir -p "$WORKDIR/07_js"
-  mkdir -p "$WORKDIR/08_params"
-  mkdir -p "$WORKDIR/09_vulns/sqlmap"
-  mkdir -p "$WORKDIR/10_cloud"
-  mkdir -p "$WORKDIR/11_secrets"
-  mkdir -p "$WORKDIR/12_screenshots"
-  mkdir -p "$WORKDIR/13_api"
-  mkdir -p "$WORKDIR/14_github"
-  mkdir -p "$WORKDIR/15_origins"
-  mkdir -p "$WORKDIR/intelligence"
-  mkdir -p "$WORKDIR/reports"
+
+  # Create the full output directory tree per §8 (safe)
+  safe_mkdir "$WORKDIR/meta"
+  safe_mkdir "$WORKDIR/01_subdomains/passive"
+  safe_mkdir "$WORKDIR/01_subdomains/active"
+  safe_mkdir "$WORKDIR/01_subdomains/fuzzing"
+  safe_mkdir "$WORKDIR/02_dns"
+  safe_mkdir "$WORKDIR/03_live_hosts"
+  safe_mkdir "$WORKDIR/04_ports"
+  safe_mkdir "$WORKDIR/05_urls/raw"
+  safe_mkdir "$WORKDIR/05_urls/categorized"
+  safe_mkdir "$WORKDIR/06_content"
+  safe_mkdir "$WORKDIR/07_js"
+  safe_mkdir "$WORKDIR/08_params"
+  safe_mkdir "$WORKDIR/09_vulns/sqlmap"
+  safe_mkdir "$WORKDIR/10_cloud"
+  safe_mkdir "$WORKDIR/11_secrets"
+  safe_mkdir "$WORKDIR/12_screenshots"
+  safe_mkdir "$WORKDIR/13_api"
+  safe_mkdir "$WORKDIR/14_github"
+  safe_mkdir "$WORKDIR/15_origins"
+  safe_mkdir "$WORKDIR/intelligence"
+  safe_mkdir "$WORKDIR/reports"
 
   # Set log file
   export LOG_FILE="$WORKDIR/meta/execution.log"
-  touch "$LOG_FILE"
+  safe_touch "$LOG_FILE"
 
   # Initialize state machine
   state_init

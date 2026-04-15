@@ -1,3 +1,23 @@
+# Safe file helpers for runtime/reporting
+safe_touch() {
+  local file="$1"
+  if ! touch "$file" 2>/dev/null; then
+    echo "[ERROR] Cannot create or write to $file (permission denied)" >&2
+    return 1
+  fi
+  return 0
+}
+
+safe_mkdir() {
+  local dir="$1"
+  if [ ! -d "$dir" ]; then
+    if ! mkdir -p "$dir" 2>/dev/null; then
+      echo "[ERROR] Cannot create directory $dir (permission denied)" >&2
+      return 1
+    fi
+  fi
+  return 0
+}
 #!/bin/bash
 # ============================================================
 # RECON Framework — lib/utils.sh

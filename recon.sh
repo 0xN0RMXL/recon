@@ -4,6 +4,16 @@
 # Main Entry Point
 # ============================================================
 
+set -euo pipefail
+
+# Root-run guard: refuse to run as root unless explicitly allowed
+if [ "$(id -u)" -eq 0 ]; then
+  if [ "${ALLOW_ROOT:-}" != "1" ]; then
+    echo "[FATAL] Do not run recon.sh as root. Use a regular user account." >&2
+    exit 1
+  fi
+fi
+
 set -o pipefail
 
 # ─── SCRIPT DIRECTORY DETECTION ──────────────────────────────
