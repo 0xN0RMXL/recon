@@ -54,7 +54,7 @@
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/recon.git
+git clone https://github.com/0xN0RMXL/recon.git
 cd recon
 
 # 2. Run the one-shot installer (installs everything)
