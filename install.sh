@@ -147,20 +147,51 @@ install_paramspider_tool() {
   local py_bin="$1"
   local pip_flags=(--user --break-system-packages)
   local ps_dir="$TOOLS_DIR/paramspider"
+  local backup_dir=""
+  local clone_output=""
 
   info "Installing ParamSpider from GitHub (non-PyPI)..."
 
-  mkdir -p "$TOOLS_DIR" "$LOCAL_BIN"
+  run_as_actual_user mkdir -p "$TOOLS_DIR" "$LOCAL_BIN"
+
+  if ! run_as_actual_user test -w "$TOOLS_DIR"; then
+    warn "Tools directory is not writable by $ACTUAL_USER. Fixing ownership..."
+    sudo chown -R "$ACTUAL_USER:$ACTUAL_USER" "$TOOLS_DIR" 2>/dev/null || true
+  fi
+
+  if ! run_as_actual_user test -w "$LOCAL_BIN"; then
+    warn "$LOCAL_BIN is not writable by $ACTUAL_USER. Fixing ownership..."
+    sudo chown -R "$ACTUAL_USER:$ACTUAL_USER" "$LOCAL_BIN" 2>/dev/null || true
+  fi
 
   if [ -d "$ps_dir/.git" ]; then
     run_as_actual_user git -C "$ps_dir" pull --ff-only >/dev/null 2>&1 || \
       warn "ParamSpider update failed; using existing clone"
   else
-    run_as_actual_user git clone -q https://github.com/devanshbatham/ParamSpider "$ps_dir" 2>/dev/null || \
-    run_as_actual_user git clone -q https://github.com/devanshbatham/paramspider "$ps_dir" 2>/dev/null || {
-      warn "ParamSpider clone failed"
+    if [ -d "$ps_dir" ]; then
+      backup_dir="${ps_dir}.backup.$(date +%s)"
+      warn "Existing ParamSpider directory is not a git clone. Preserving it at: $backup_dir"
+      if ! run_as_actual_user mv "$ps_dir" "$backup_dir" 2>/dev/null; then
+        warn "Could not preserve existing ParamSpider directory: $ps_dir"
+        return 1
+      fi
+    fi
+
+    if clone_output=$(run_as_actual_user git clone -q https://github.com/devanshbatham/ParamSpider "$ps_dir" 2>&1); then
+      :
+    elif clone_output=$(run_as_actual_user git clone -q https://github.com/devanshbatham/paramspider "$ps_dir" 2>&1); then
+      :
+    else
+      warn "ParamSpider clone failed: ${clone_output:-unknown error}"
+      if [ -n "$backup_dir" ] && [ -d "$backup_dir" ] && [ ! -e "$ps_dir" ]; then
+        run_as_actual_user mv "$backup_dir" "$ps_dir" 2>/dev/null || true
+      fi
       return 1
-    }
+    fi
+
+    if [ -n "$backup_dir" ] && [ -d "$backup_dir" ]; then
+      warn "Previous ParamSpider directory kept at: $backup_dir"
+    fi
   fi
 
   if [ -n "$py_bin" ]; then
