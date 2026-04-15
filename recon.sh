@@ -30,7 +30,6 @@ done
 TARGET=""
 TARGET_MODE=""
 TARGET_LIST=""
-PHASES_TO_RUN=""
 SKIP_PHASES=""
 ONLY_PHASE=""
 FORCE="false"
@@ -50,7 +49,7 @@ parse_args() {
       -w|--wildcard)  TARGET=$(echo "$2" | sed 's/^\*\.//'); TARGET_MODE="wildcard"; shift 2 ;;
       -l|--list)      TARGET_LIST="$2"; TARGET_MODE="list"; shift 2 ;;
       -c|--company)   TARGET="$2"; TARGET_MODE="company"; shift 2 ;;
-      --phase)        PHASES_TO_RUN="$2"; shift 2 ;;
+      --phase)        ONLY_PHASE="$2"; shift 2 ;;
       --skip)         SKIP_PHASES="$2"; shift 2 ;;
       --only)         ONLY_PHASE="$2"; shift 2 ;;
       --resume)       RESUME="true"; shift ;;
@@ -157,7 +156,6 @@ interactive_menu() {
 select_custom_phases() {
   local phases=("subdomains" "dns" "probe" "ports" "urls" "content" "js" "params"
                 "vulns" "cloud" "secrets" "screenshots" "api" "github" "origins")
-  local selected=()
 
   echo ""
   echo -e "${BOLD}Select phases to run (toggle with number, 'a' for all, 'd' for done):${RESET}"
@@ -320,6 +318,7 @@ main() {
   fi
 
   # Load configuration
+  export SKIP_PHASES ONLY_PHASE NO_NOTIFY CONFIG
   load_config
 
   # Override Burp if --no-burp flag

@@ -142,37 +142,44 @@ load_config() {
       yq -r "$key" "$file" 2>/dev/null | grep -v "^null$"
     else
       # Fallback: basic awk parser for simple key: value pairs
-      local flat_key
-      flat_key=$(echo "$key" | sed 's/\.\([^.]*\)$//' | sed 's/^\.//;s/\./_/g')
       local leaf
       leaf=$(echo "$key" | grep -oE '[^.]+$')
       grep -E "^\s+${leaf}:" "$file" | head -1 | sed 's/.*:\s*"\?\([^"]*\)"\?.*/\1/' | sed 's/^\s*//;s/\s*$//'
     fi
   }
 
+  _export_yaml_key() {
+    local var_name="$1"
+    local yaml_key="$2"
+    local value
+    value=$(_yaml_val "$yaml_key" "$config_file")
+    printf -v "$var_name" '%s' "$value"
+    export "${var_name?}"
+  }
+
   # ── API Keys
-  export CHAOS_KEY=$(_yaml_val '.api_keys.chaos' "$config_file")
-  export GITHUB_TOKEN=$(_yaml_val '.api_keys.github' "$config_file")
-  export SHODAN_KEY=$(_yaml_val '.api_keys.shodan' "$config_file")
-  export SECURITYTRAILS_KEY=$(_yaml_val '.api_keys.securitytrails' "$config_file")
-  export CENSYS_ID=$(_yaml_val '.api_keys.censys_id' "$config_file")
-  export CENSYS_SECRET=$(_yaml_val '.api_keys.censys_secret' "$config_file")
-  export VIRUSTOTAL_KEY=$(_yaml_val '.api_keys.virustotal' "$config_file")
-  export URLSCAN_KEY=$(_yaml_val '.api_keys.urlscan' "$config_file")
-  export OTX_KEY=$(_yaml_val '.api_keys.otx' "$config_file")
-  export NETLAS_KEY=$(_yaml_val '.api_keys.netlas' "$config_file")
-  export C99_KEY=$(_yaml_val '.api_keys.c99' "$config_file")
-  export FOFA_EMAIL=$(_yaml_val '.api_keys.fofa_email' "$config_file")
-  export FOFA_KEY=$(_yaml_val '.api_keys.fofa_key' "$config_file")
-  export ZOOMEYE_KEY=$(_yaml_val '.api_keys.zoomeye' "$config_file")
+  _export_yaml_key CHAOS_KEY '.api_keys.chaos'
+  _export_yaml_key GITHUB_TOKEN '.api_keys.github'
+  _export_yaml_key SHODAN_KEY '.api_keys.shodan'
+  _export_yaml_key SECURITYTRAILS_KEY '.api_keys.securitytrails'
+  _export_yaml_key CENSYS_ID '.api_keys.censys_id'
+  _export_yaml_key CENSYS_SECRET '.api_keys.censys_secret'
+  _export_yaml_key VIRUSTOTAL_KEY '.api_keys.virustotal'
+  _export_yaml_key URLSCAN_KEY '.api_keys.urlscan'
+  _export_yaml_key OTX_KEY '.api_keys.otx'
+  _export_yaml_key NETLAS_KEY '.api_keys.netlas'
+  _export_yaml_key C99_KEY '.api_keys.c99'
+  _export_yaml_key FOFA_EMAIL '.api_keys.fofa_email'
+  _export_yaml_key FOFA_KEY '.api_keys.fofa_key'
+  _export_yaml_key ZOOMEYE_KEY '.api_keys.zoomeye'
 
   # ── Burp Suite
-  export BURP_ENABLED=$(_yaml_val '.burp.enabled' "$config_file")
-  export BURP_PROXY=$(_yaml_val '.burp.proxy' "$config_file")
-  export BURP_API_URL=$(_yaml_val '.burp.api_url' "$config_file")
-  export BURP_API_KEY=$(_yaml_val '.burp.api_key' "$config_file")
-  export BURP_AUTO_SCAN=$(_yaml_val '.burp.auto_scan' "$config_file")
-  export BURP_SEND_INTERESTING=$(_yaml_val '.burp.send_interesting' "$config_file")
+  _export_yaml_key BURP_ENABLED '.burp.enabled'
+  _export_yaml_key BURP_PROXY '.burp.proxy'
+  _export_yaml_key BURP_API_URL '.burp.api_url'
+  _export_yaml_key BURP_API_KEY '.burp.api_key'
+  _export_yaml_key BURP_AUTO_SCAN '.burp.auto_scan'
+  _export_yaml_key BURP_SEND_INTERESTING '.burp.send_interesting'
 
   # Defaults
   [ -z "$BURP_ENABLED" ] && export BURP_ENABLED="false"
@@ -181,19 +188,19 @@ load_config() {
   [ -z "$BURP_SEND_INTERESTING" ] && export BURP_SEND_INTERESTING="true"
 
   # ── Notifications
-  export TELEGRAM_BOT_TOKEN=$(_yaml_val '.notifications.telegram_bot_token' "$config_file")
-  export TELEGRAM_CHAT_ID=$(_yaml_val '.notifications.telegram_chat_id' "$config_file")
-  export DISCORD_WEBHOOK=$(_yaml_val '.notifications.discord_webhook' "$config_file")
-  export SLACK_WEBHOOK=$(_yaml_val '.notifications.slack_webhook' "$config_file")
+  _export_yaml_key TELEGRAM_BOT_TOKEN '.notifications.telegram_bot_token'
+  _export_yaml_key TELEGRAM_CHAT_ID '.notifications.telegram_chat_id'
+  _export_yaml_key DISCORD_WEBHOOK '.notifications.discord_webhook'
+  _export_yaml_key SLACK_WEBHOOK '.notifications.slack_webhook'
 
   # ── Performance
-  export HTTPX_THREADS=$(_yaml_val '.performance.httpx_threads' "$config_file")
-  export NUCLEI_RATE=$(_yaml_val '.performance.nuclei_rate' "$config_file")
-  export FFUF_THREADS=$(_yaml_val '.performance.ffuf_threads' "$config_file")
-  export NAABU_RATE=$(_yaml_val '.performance.naabu_rate' "$config_file")
-  export GAU_THREADS=$(_yaml_val '.performance.gau_threads' "$config_file")
-  export KATANA_DEPTH=$(_yaml_val '.performance.katana_depth' "$config_file")
-  export KATANA_CONCURRENCY=$(_yaml_val '.performance.katana_concurrency' "$config_file")
+  _export_yaml_key HTTPX_THREADS '.performance.httpx_threads'
+  _export_yaml_key NUCLEI_RATE '.performance.nuclei_rate'
+  _export_yaml_key FFUF_THREADS '.performance.ffuf_threads'
+  _export_yaml_key NAABU_RATE '.performance.naabu_rate'
+  _export_yaml_key GAU_THREADS '.performance.gau_threads'
+  _export_yaml_key KATANA_DEPTH '.performance.katana_depth'
+  _export_yaml_key KATANA_CONCURRENCY '.performance.katana_concurrency'
 
   # Defaults
   [ -z "$HTTPX_THREADS" ] && export HTTPX_THREADS=200
@@ -206,21 +213,34 @@ load_config() {
 
   # ── Wordlists (relative to SCRIPT_DIR/data/wordlists/)
   local wl_base="${SCRIPT_DIR}/data/wordlists"
-  export WORDLIST_DNS_BRUTEFORCE="${wl_base}/$(_yaml_val '.wordlists.dns_bruteforce' "$config_file")"
-  export WORDLIST_DNS_BEST="${wl_base}/$(_yaml_val '.wordlists.dns_best' "$config_file")"
-  export WORDLIST_DNS_JHADDIX="${wl_base}/$(_yaml_val '.wordlists.dns_jhaddix' "$config_file")"
-  export WORDLIST_WEB_RAFT_LARGE_DIRS="${wl_base}/$(_yaml_val '.wordlists.web_raft_large_dirs' "$config_file")"
-  export WORDLIST_WEB_RAFT_LARGE_FILES="${wl_base}/$(_yaml_val '.wordlists.web_raft_large_files' "$config_file")"
-  export WORDLIST_WEB_COMMON="${wl_base}/$(_yaml_val '.wordlists.web_common' "$config_file")"
-  export WORDLIST_WEB_PARAMS="${wl_base}/$(_yaml_val '.wordlists.web_params' "$config_file")"
+  local wl_dns_bruteforce wl_dns_best wl_dns_jhaddix wl_web_raft_large_dirs wl_web_raft_large_files wl_web_common wl_web_params
+  wl_dns_bruteforce=$(_yaml_val '.wordlists.dns_bruteforce' "$config_file")
+  wl_dns_best=$(_yaml_val '.wordlists.dns_best' "$config_file")
+  wl_dns_jhaddix=$(_yaml_val '.wordlists.dns_jhaddix' "$config_file")
+  wl_web_raft_large_dirs=$(_yaml_val '.wordlists.web_raft_large_dirs' "$config_file")
+  wl_web_raft_large_files=$(_yaml_val '.wordlists.web_raft_large_files' "$config_file")
+  wl_web_common=$(_yaml_val '.wordlists.web_common' "$config_file")
+  wl_web_params=$(_yaml_val '.wordlists.web_params' "$config_file")
+
+  WORDLIST_DNS_BRUTEFORCE="${wl_base}/${wl_dns_bruteforce}"
+  WORDLIST_DNS_BEST="${wl_base}/${wl_dns_best}"
+  WORDLIST_DNS_JHADDIX="${wl_base}/${wl_dns_jhaddix}"
+  WORDLIST_WEB_RAFT_LARGE_DIRS="${wl_base}/${wl_web_raft_large_dirs}"
+  WORDLIST_WEB_RAFT_LARGE_FILES="${wl_base}/${wl_web_raft_large_files}"
+  WORDLIST_WEB_COMMON="${wl_base}/${wl_web_common}"
+  WORDLIST_WEB_PARAMS="${wl_base}/${wl_web_params}"
+  export WORDLIST_DNS_BRUTEFORCE WORDLIST_DNS_BEST WORDLIST_DNS_JHADDIX
+  export WORDLIST_WEB_RAFT_LARGE_DIRS WORDLIST_WEB_RAFT_LARGE_FILES WORDLIST_WEB_COMMON WORDLIST_WEB_PARAMS
   export RESOLVERS="${SCRIPT_DIR}/data/resolvers/resolvers.txt"
 
   # ── Scope
-  export SCOPE_STRICT=$(_yaml_val '.scope.strict' "$config_file")
+  SCOPE_STRICT=$(_yaml_val '.scope.strict' "$config_file")
+  export SCOPE_STRICT
   [ -z "$SCOPE_STRICT" ] && export SCOPE_STRICT="false"
 
   # ── Output
-  export OUTPUT_BASE=$(_yaml_val '.output.base_dir' "$config_file")
+  OUTPUT_BASE=$(_yaml_val '.output.base_dir' "$config_file")
+  export OUTPUT_BASE
   [ -z "$OUTPUT_BASE" ] && export OUTPUT_BASE="./output"
 
   # ── Data directory
