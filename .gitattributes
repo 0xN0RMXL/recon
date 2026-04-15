@@ -1,0 +1,4 @@
+*.sh text eol=lf
+requirements.txt text eol=lf
+modules/**/requirements.txt text eol=lf
+go-tools.txt text eol=lf

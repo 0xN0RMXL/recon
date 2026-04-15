@@ -18,7 +18,8 @@ RESET='\033[0m'
 # Detect actual user context for installs (handles sudo)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ACTUAL_USER="${SUDO_USER:-$(whoami)}"
-ACTUAL_HOME=$(getent passwd "$ACTUAL_USER" | cut -d: -f6)
+ACTUAL_HOME=$(getent passwd "$ACTUAL_USER" 2>/dev/null | cut -d: -f6)
+[ -z "$ACTUAL_HOME" ] && ACTUAL_HOME="$HOME"
 TOOLS_DIR="$ACTUAL_HOME/tools"
 LOCAL_BIN="$ACTUAL_HOME/.local/bin"
 
@@ -27,6 +28,27 @@ info()    { echo -e "${CYAN}[*]${RESET} $1"; }
 success() { echo -e "${GREEN}[+]${RESET} $1"; }
 warn()    { echo -e "${YELLOW}[!]${RESET} $1"; }
 error()   { echo -e "${RED}[-]${RESET} $1"; }
+
+run_as_actual_user() {
+  if [ "$(id -un)" = "$ACTUAL_USER" ]; then
+    "$@"
+  else
+    sudo -H -u "$ACTUAL_USER" env \
+      "HOME=$ACTUAL_HOME" \
+      "PATH=/usr/local/go/bin:$ACTUAL_HOME/go/bin:$ACTUAL_HOME/.local/bin:$PATH" \
+      "$@"
+  fi
+}
+
+resolve_go_binary() {
+  if command -v go &>/dev/null; then
+    command -v go
+  elif [ -x "/usr/local/go/bin/go" ]; then
+    echo "/usr/local/go/bin/go"
+  else
+    echo ""
+  fi
+}
 
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
@@ -73,15 +95,18 @@ install_go() {
   local GO_VERSION="1.22.0"
   local GO_TARBALL="go${GO_VERSION}.linux-amd64.tar.gz"
   local GO_URL="https://go.dev/dl/${GO_TARBALL}"
+  local go_bin
 
-  if command -v go &>/dev/null; then
+  go_bin=$(resolve_go_binary)
+
+  if [ -n "$go_bin" ]; then
     local current_ver
-    current_ver=$(go version | grep -oE 'go[0-9]+\.[0-9]+' | sed 's/go//')
+    current_ver=$($go_bin version | grep -oE 'go[0-9]+\.[0-9]+' | sed 's/go//')
     local major minor
     major=$(echo "$current_ver" | cut -d. -f1)
     minor=$(echo "$current_ver" | cut -d. -f2)
     if [ "$major" -ge 1 ] && [ "$minor" -ge 21 ]; then
-      success "Go $(go version | grep -oE 'go[0-9]+\.[0-9]+\.[0-9]+') already installed"
+      success "Go $($go_bin version | grep -oE 'go[0-9]+\.[0-9]+\.[0-9]+') already installed"
       return 0
     fi
   fi
@@ -115,6 +140,13 @@ install_go_tools() {
 
 
   export PATH=$PATH:/usr/local/go/bin:$ACTUAL_HOME/go/bin
+  local go_bin
+  go_bin=$(resolve_go_binary)
+
+  if [ -z "$go_bin" ]; then
+    error "Go binary not found. Install Go first, then rerun install.sh"
+    return 1
+  fi
 
   if [ ! -f "$SCRIPT_DIR/go-tools.txt" ]; then
     error "go-tools.txt not found!"
@@ -124,6 +156,9 @@ install_go_tools() {
   local total
   total=$(wc -l < "$SCRIPT_DIR/go-tools.txt" | tr -d ' ')
   local count=0
+  local installed_count=0
+  local failed_count=0
+  local failed_list=()
 
   while IFS= read -r tool; do
     [ -z "$tool" ] && continue
@@ -140,34 +175,82 @@ install_go_tools() {
     fi
     [ -z "$tool_name" ] && tool_name="$tool"
     info "[$count/$total] Installing $tool_name..."
-    if output=$(sudo -u "$ACTUAL_USER" go install "$tool" 2>&1); then
-      if sudo -u "$ACTUAL_USER" command -v "$tool_name" &>/dev/null; then
+    if output=$(run_as_actual_user "$go_bin" install "$tool" 2>&1); then
+      if [ -x "$ACTUAL_HOME/go/bin/$tool_name" ] || command -v "$tool_name" &>/dev/null; then
         success "  $tool_name installed"
+        installed_count=$((installed_count + 1))
       else
         warn "  $tool_name: install reported success but binary not in PATH"
+        failed_count=$((failed_count + 1))
+        failed_list+=("$tool_name (not found in PATH)")
       fi
     else
       warn "  $tool_name failed: $output"
+      failed_count=$((failed_count + 1))
+      failed_list+=("$tool_name")
     fi
   done < "$SCRIPT_DIR/go-tools.txt"
+
+  if [ "$failed_count" -eq 0 ]; then
+    success "Go tools summary: $installed_count installed, 0 failed"
+  else
+    warn "Go tools summary: $installed_count installed, $failed_count failed"
+    for failed_tool in "${failed_list[@]}"; do
+      warn "  - $failed_tool"
+    done
+  fi
 }
 
 # ─── 4. INSTALL PYTHON TOOLS ────────────────────────────────
 install_python_tools() {
   info "Installing Python tools..."
+  local py_bin
+  py_bin=$(command -v python3 || true)
+
+  if [ -z "$py_bin" ]; then
+    warn "python3 not found; skipping Python tools"
+    return 0
+  fi
+
+  local pip_flags=(--user --break-system-packages)
 
   if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
-    pip3 install --break-system-packages -r "$SCRIPT_DIR/requirements.txt" 2>/dev/null && \
-      success "Python tools installed" || \
-      warn "Some Python tools failed to install"
+    if run_as_actual_user "$py_bin" -m pip install "${pip_flags[@]}" -r "$SCRIPT_DIR/requirements.txt"; then
+      success "Python tools installed"
+    else
+      warn "Bulk Python install failed. Retrying package-by-package to show exact failures..."
+      local failed_packages=()
+      while IFS= read -r package; do
+        [ -z "$package" ] && continue
+        [[ "$package" =~ ^# ]] && continue
+        info "Installing Python package: $package"
+        if run_as_actual_user "$py_bin" -m pip install "${pip_flags[@]}" "$package"; then
+          success "  $package installed"
+        else
+          warn "  $package failed"
+          failed_packages+=("$package")
+        fi
+      done < "$SCRIPT_DIR/requirements.txt"
+
+      if [ "${#failed_packages[@]}" -eq 0 ]; then
+        success "Python tools installed after retries"
+      else
+        warn "Some Python tools failed to install: ${failed_packages[*]}"
+      fi
+    fi
   fi
 
   # Install Playwright and Chromium
   info "Installing Playwright + Chromium..."
-  pip3 install --break-system-packages playwright 2>/dev/null
-  playwright install chromium 2>/dev/null && \
-    success "Playwright + Chromium installed" || \
-    warn "Playwright install failed"
+  if run_as_actual_user "$py_bin" -m pip install "${pip_flags[@]}" playwright; then
+    if run_as_actual_user "$py_bin" -m playwright install chromium; then
+      success "Playwright + Chromium installed"
+    else
+      warn "Playwright browser install failed"
+    fi
+  else
+    warn "Playwright package install failed"
+  fi
 }
 
 # ─── 5. CLONE BINARY TOOLS ──────────────────────────────────
@@ -415,11 +498,21 @@ create_config() {
   fi
 }
 
+# ─── 12. FIX USER OWNERSHIP (SUDO RUNS) ─────────────────────
+fix_user_ownership() {
+  if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then
+    info "Ensuring user ownership for installed tools..."
+    [ -d "$ACTUAL_HOME/go" ] && chown -R "$ACTUAL_USER:$ACTUAL_USER" "$ACTUAL_HOME/go" 2>/dev/null || true
+    [ -d "$ACTUAL_HOME/.local" ] && chown -R "$ACTUAL_USER:$ACTUAL_USER" "$ACTUAL_HOME/.local" 2>/dev/null || true
+    [ -d "$TOOLS_DIR" ] && chown -R "$ACTUAL_USER:$ACTUAL_USER" "$TOOLS_DIR" 2>/dev/null || true
+  fi
+}
+
 # ─── 12. VERIFY INSTALLATION ────────────────────────────────
 verify_install() {
   info "Running doctor.sh to verify installation..."
   if [ -f "$SCRIPT_DIR/doctor.sh" ]; then
-    bash "$SCRIPT_DIR/doctor.sh"
+    run_as_actual_user bash "$SCRIPT_DIR/doctor.sh"
   fi
 }
 
@@ -461,6 +554,7 @@ main() {
   download_kiterunner_wordlists
   update_nuclei
   create_config
+  fix_user_ownership
   verify_install
   api_key_reminder
 

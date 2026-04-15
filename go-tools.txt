@@ -19,6 +19,7 @@ github.com/owasp-amass/amass/v4/cmd/amass@master
 github.com/sensepost/gowitness@latest
 github.com/jaeles-project/gospider@latest
 github.com/hahwul/dalfox/v2@latest
+github.com/trufflesecurity/trufflehog/v3@latest
 github.com/rverton/webanalyze/cmd/webanalyze@latest
 github.com/gwen001/github-subdomains@latest
 github.com/d3mondev/puredns/v2@latest

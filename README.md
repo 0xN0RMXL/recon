@@ -74,8 +74,8 @@ The installer handles **everything** automatically:
 |----------|-------------------|
 | System packages | git, curl, jq, nmap, masscan, parallel, chromium |
 | Go 1.22+ | Downloaded and configured if not present |
-| Go tools (28) | subfinder, httpx, nuclei, naabu, ffuf, katana, amass, etc. |
-| Python tools (7) | trufflehog, arjun, dirsearch, waymore, paramspider |
+| Go tools (29) | subfinder, httpx, nuclei, naabu, ffuf, katana, amass, trufflehog, etc. |
+| Python tools (6) | arjun, dirsearch, waymore, paramspider, playwright, requests stack |
 | Browser automation | Playwright + Chromium |
 | Cloned tools | GitDorker, bfac, sqlmap |
 | Binary releases | findomain, kiterunner, feroxbuster, gitleaks |
@@ -476,6 +476,25 @@ Drop them in `~/nuclei-templates/` and they'll be picked up automatically. RECON
 ### Q: Can I add my own recon phases?
 
 Yes. Create a new file in `lib/` with a function, then add a `run_phase "name" "function_name"` call in `recon.sh` → `run_all_phases()`. The state machine will automatically track it.
+
+### Q: Why do Go tools fail with `sudo: go: command not found`?
+
+This happens when the Go binary path is not preserved in a sudo user context. The installer now resolves Go using an absolute binary path and runs Go installs under the invoking user context.
+
+If you still hit this on an older checkout, update and rerun:
+
+```bash
+git pull
+bash install.sh
+```
+
+### Q: The installer says `Some Python tools failed to install`. How do I see which package failed?
+
+Current installer versions retry Python dependencies package-by-package and print each failing package explicitly. On Ubuntu 24.04+, Python packaging is stricter; if a package fails, install it manually to inspect the exact resolver error:
+
+```bash
+python3 -m pip install --user --break-system-packages <package-name>
+```
 
 ---
 

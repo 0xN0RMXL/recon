@@ -1,4 +1,3 @@
-trufflehog3
 arjun
 dirsearch
 waymore
