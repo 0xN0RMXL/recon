@@ -121,7 +121,7 @@ subdomains_run() {
 
   # puredns bruteforce with resolvers
   if require_tool puredns; then
-    if [ -f "$WORDLIST_DNS_BEST" ] && [ -f "$RESOLVERS" ]; then
+    if [ -s "$WORDLIST_DNS_BEST" ] && [ -s "$RESOLVERS" ]; then
       log info "Running puredns bruteforce..."
       puredns bruteforce \
         "$WORDLIST_DNS_BEST" \
@@ -136,7 +136,7 @@ subdomains_run() {
 
   # dnsx bruteforce
   if require_tool dnsx; then
-    if [ -f "$WORDLIST_DNS_BRUTEFORCE" ]; then
+    if [ -s "$WORDLIST_DNS_BRUTEFORCE" ]; then
       log info "Running dnsx bruteforce..."
       dnsx -silent -d "$TARGET" \
         -w "$WORDLIST_DNS_BRUTEFORCE" \
@@ -150,7 +150,7 @@ subdomains_run() {
   # ── SUBDOMAIN FUZZING ──────────────────────────────────────
 
   if require_tool ffuf; then
-    if [ -f "$WORDLIST_DNS_BRUTEFORCE" ]; then
+    if [ -s "$WORDLIST_DNS_BRUTEFORCE" ]; then
       log info "Running ffuf subdomain fuzzing..."
       ffuf -u "https://FUZZ.$TARGET" \
         -w "$WORDLIST_DNS_BRUTEFORCE" \

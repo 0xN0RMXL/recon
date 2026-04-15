@@ -46,6 +46,30 @@ check_file() {
   fi
 }
 
+check_file_min_lines() {
+  local name="$1"
+  local path="$2"
+  local min_lines="$3"
+
+  if [ ! -f "$path" ]; then
+    printf "${CYAN}║${RESET}  %-16s ${RED}❌${RESET}  %-34s ${CYAN}║${RESET}\n" "$name" "MISSING"
+    ((FAIL++))
+    return
+  fi
+
+  local lines
+  lines=$(wc -l < "$path" 2>/dev/null | tr -d ' ')
+  lines="${lines:-0}"
+
+  if [ "$lines" -ge "$min_lines" ]; then
+    printf "${CYAN}║${RESET}  %-16s ${GREEN}✅${RESET}  %-34s ${CYAN}║${RESET}\n" "$name" "$lines lines"
+    ((PASS++))
+  else
+    printf "${CYAN}║${RESET}  %-16s ${RED}❌${RESET}  %-34s ${CYAN}║${RESET}\n" "$name" "too small ($lines lines)"
+    ((FAIL++))
+  fi
+}
+
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════╗${RESET}"
 echo -e "${CYAN}║${RESET}${BOLD}          RECON — Environment Health Check            ${RESET}${CYAN}║${RESET}"
@@ -92,16 +116,22 @@ echo -e "${CYAN}╠════════════════════�
 
 # ── Cloned Tools
 check_file "gitdorker" "$HOME/tools/GitDorker/GitDorker.py"
-check_file "bfac" "$HOME/tools/bfac/bfac.py"
+check_file "bfac" "$HOME/tools/bfac"
 check_file "sqlmap" "$HOME/tools/sqlmap/sqlmap.py"
 
 echo -e "${CYAN}╠══════════════════════════════════════════════════════╣${RESET}"
 
 # ── Config & Data
 check_file "config.yaml" "$SCRIPT_DIR/config.yaml"
-check_file "wordlists" "$SCRIPT_DIR/data/wordlists/dns"
-check_file "resolvers.txt" "$SCRIPT_DIR/data/resolvers/resolvers.txt"
-check_file "github_dorks" "$SCRIPT_DIR/data/dorks/github_dorks.txt"
+check_file_min_lines "dns_subs_wl" "$SCRIPT_DIR/data/wordlists/dns/subdomains-top1million-110000.txt" 1000
+check_file_min_lines "dns_jhaddix" "$SCRIPT_DIR/data/wordlists/dns/dns-Jhaddix.txt" 100
+check_file_min_lines "dns_best_wl" "$SCRIPT_DIR/data/wordlists/dns/best-dns-wordlist.txt" 100
+check_file_min_lines "web_common_wl" "$SCRIPT_DIR/data/wordlists/web/common.txt" 100
+check_file_min_lines "web_dirs_wl" "$SCRIPT_DIR/data/wordlists/web/raft-large-directories.txt" 100
+check_file_min_lines "web_files_wl" "$SCRIPT_DIR/data/wordlists/web/raft-large-files.txt" 100
+check_file_min_lines "web_params_wl" "$SCRIPT_DIR/data/wordlists/web/burp-parameter-names.txt" 20
+check_file_min_lines "resolvers.txt" "$SCRIPT_DIR/data/resolvers/resolvers.txt" 50
+check_file_min_lines "github_dorks" "$SCRIPT_DIR/data/dorks/github_dorks.txt" 5
 
 echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${RESET}"
 

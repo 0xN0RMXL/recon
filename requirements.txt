@@ -1,7 +1,6 @@
 arjun
 dirsearch
 waymore
-paramspider
 playwright
 beautifulsoup4
 requests

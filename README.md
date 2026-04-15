@@ -79,12 +79,14 @@ The installer handles **everything** automatically:
 | Browser automation | Playwright + Chromium |
 | Cloned tools | GitDorker, bfac, sqlmap |
 | Binary releases | findomain, kiterunner, feroxbuster, gitleaks |
-| Wordlists | SecLists DNS/Web, Assetnote best-dns, kiterunner API routes |
-| Resolvers | Fresh resolver list from trickest/resolvers |
-| GitHub dorks | Curated dork list from Proviesec |
+| Wordlists | SecLists DNS/Web, Assetnote best-dns, kiterunner API routes (validated, non-empty) |
+| Resolvers | Fresh resolver list from trickest/resolvers (validated minimum entries) |
+| GitHub dorks | Curated dork list from Proviesec (validated minimum lines) |
 | Nuclei templates | Latest templates auto-updated |
 
 > **💡 Tip:** After installation, run `bash doctor.sh` to verify everything is working.
+>
+> Installer now fails fast if critical data files cannot be downloaded with valid content, so empty placeholder files no longer pass.
 
 ---
 
@@ -452,7 +454,22 @@ Absolutely — it's designed for it. A $10/month VPS (2 CPU, 4GB RAM) handles mo
 
 ### Q: What if a scan gets interrupted?
 
-Just rerun with `--resume`. The state machine tracks every phase's completion status and will skip already-completed phases (unless the output file is missing or empty).
+Press `Ctrl+C` once for graceful shutdown. RECON will mark the active phase as interrupted and terminate child scan processes cleanly.
+
+Press `Ctrl+C` a second time to force-stop any stubborn child processes immediately.
+
+After interruption, rerun with `--resume`. The state machine tracks every phase's completion status and skips completed phases.
+
+### Q: Why does doctor fail on wordlists/resolvers/dorks now?
+
+`doctor.sh` now checks critical data quality, not just path existence. It fails if required files are missing, empty, or too small.
+
+This prevents false-green environments where directories exist but scans fail later due to empty data files. To repair:
+
+```bash
+bash install.sh
+bash doctor.sh
+```
 
 ### Q: Will this get me banned/blocked?
 

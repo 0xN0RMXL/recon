@@ -21,6 +21,12 @@ github_dorking() {
     return 0
   fi
 
+  if [ ! -s "$DATA_DIR/dorks/github_dorks.txt" ]; then
+    log warn "GitHub dorks file is missing or empty. Run install.sh to refresh data files."
+    touch "$OUT/gitdorker_results.txt"
+    return 0
+  fi
+
   # Write token to temp file for GitDorker
   local token_file="/tmp/github_token_$$.txt"
   echo "$GITHUB_TOKEN" > "$token_file"

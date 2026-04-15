@@ -50,6 +50,146 @@ resolve_go_binary() {
   fi
 }
 
+file_has_min_lines() {
+  local file_path="$1"
+  local min_lines="$2"
+
+  if [ ! -s "$file_path" ]; then
+    return 1
+  fi
+
+  local lines
+  lines=$(wc -l < "$file_path" 2>/dev/null | tr -d ' ')
+  [ -n "$lines" ] && [ "$lines" -ge "$min_lines" ]
+}
+
+download_validated_text_file() {
+  local output_file="$1"
+  local min_lines="$2"
+  local label="$3"
+  shift 3
+  local urls=("$@")
+
+  mkdir -p "$(dirname "$output_file")"
+
+  if file_has_min_lines "$output_file" "$min_lines"; then
+    local existing_lines
+    existing_lines=$(wc -l < "$output_file" 2>/dev/null | tr -d ' ')
+    success "$label already present ($existing_lines lines)"
+    return 0
+  fi
+
+  warn "$label missing or invalid. Downloading..."
+
+  local url tmp_file lines
+  tmp_file="${output_file}.tmp.$$"
+
+  for url in "${urls[@]}"; do
+    [ -z "$url" ] && continue
+
+    if wget -q "$url" -O "$tmp_file" 2>/dev/null; then
+      lines=$(wc -l < "$tmp_file" 2>/dev/null | tr -d ' ')
+      lines="${lines:-0}"
+      if [ "$lines" -ge "$min_lines" ]; then
+        mv "$tmp_file" "$output_file"
+        success "$label downloaded ($lines lines)"
+        return 0
+      fi
+      warn "$label from $url is too small ($lines lines)"
+    else
+      warn "Failed downloading $label from $url"
+    fi
+
+    rm -f "$tmp_file"
+  done
+
+  rm -f "$tmp_file"
+  error "Unable to install valid $label"
+  return 1
+}
+
+install_trufflehog_binary() {
+  info "Trying trufflehog binary fallback..."
+
+  local tg_tag tg_ver tg_url tg_bin
+  tg_tag=$(curl -s https://api.github.com/repos/trufflesecurity/trufflehog/releases/latest \
+    | jq -r '.tag_name' 2>/dev/null)
+
+  if [ -z "$tg_tag" ] || [ "$tg_tag" = "null" ]; then
+    warn "Could not resolve trufflehog latest release tag"
+    return 1
+  fi
+
+  tg_ver="${tg_tag#v}"
+  tg_url="https://github.com/trufflesecurity/trufflehog/releases/download/${tg_tag}/trufflehog_${tg_ver}_linux_amd64.tar.gz"
+
+  rm -rf /tmp/recon_trufflehog /tmp/recon_trufflehog.tar.gz
+  mkdir -p /tmp/recon_trufflehog
+
+  if wget -q "$tg_url" -O /tmp/recon_trufflehog.tar.gz 2>/dev/null && \
+     tar xzf /tmp/recon_trufflehog.tar.gz -C /tmp/recon_trufflehog 2>/dev/null; then
+    tg_bin=$(find /tmp/recon_trufflehog -type f -name trufflehog 2>/dev/null | head -1)
+    if [ -n "$tg_bin" ]; then
+      install -m 0755 "$tg_bin" "$LOCAL_BIN/trufflehog" 2>/dev/null && {
+        success "trufflehog installed via binary fallback"
+        rm -rf /tmp/recon_trufflehog /tmp/recon_trufflehog.tar.gz
+        return 0
+      }
+    fi
+  fi
+
+  rm -rf /tmp/recon_trufflehog /tmp/recon_trufflehog.tar.gz
+  warn "trufflehog binary fallback failed"
+  return 1
+}
+
+install_paramspider_tool() {
+  local py_bin="$1"
+  local pip_flags=(--user --break-system-packages)
+  local ps_dir="$TOOLS_DIR/paramspider"
+
+  info "Installing ParamSpider from GitHub (non-PyPI)..."
+
+  mkdir -p "$TOOLS_DIR" "$LOCAL_BIN"
+
+  if [ -d "$ps_dir/.git" ]; then
+    run_as_actual_user git -C "$ps_dir" pull --ff-only >/dev/null 2>&1 || \
+      warn "ParamSpider update failed; using existing clone"
+  else
+    run_as_actual_user git clone -q https://github.com/devanshbatham/ParamSpider "$ps_dir" 2>/dev/null || \
+    run_as_actual_user git clone -q https://github.com/devanshbatham/paramspider "$ps_dir" 2>/dev/null || {
+      warn "ParamSpider clone failed"
+      return 1
+    }
+  fi
+
+  if [ -n "$py_bin" ]; then
+    run_as_actual_user "$py_bin" -m pip install "${pip_flags[@]}" requests colorama >/dev/null 2>&1 || true
+  fi
+
+  cat > "$LOCAL_BIN/paramspider" << 'EOF'
+#!/usr/bin/env bash
+if [ -f "$HOME/tools/paramspider/paramspider.py" ]; then
+  python3 "$HOME/tools/paramspider/paramspider.py" "$@"
+elif [ -f "$HOME/tools/paramspider/paramspider/main.py" ]; then
+  python3 "$HOME/tools/paramspider/paramspider/main.py" "$@"
+else
+  echo "paramspider source not found under $HOME/tools/paramspider" >&2
+  exit 1
+fi
+EOF
+
+  chmod +x "$LOCAL_BIN/paramspider" 2>/dev/null
+
+  if [ -x "$LOCAL_BIN/paramspider" ]; then
+    success "ParamSpider installed"
+    return 0
+  fi
+
+  warn "ParamSpider wrapper install failed"
+  return 1
+}
+
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
     warn "Not running as root. Some system packages may fail to install."
@@ -185,6 +325,10 @@ install_go_tools() {
         failed_list+=("$tool_name (not found in PATH)")
       fi
     else
+      if [ "$tool_name" = "trufflehog" ] && install_trufflehog_binary; then
+        installed_count=$((installed_count + 1))
+        continue
+      fi
       warn "  $tool_name failed: $output"
       failed_count=$((failed_count + 1))
       failed_list+=("$tool_name")
@@ -239,6 +383,8 @@ install_python_tools() {
       fi
     fi
   fi
+
+  install_paramspider_tool "$py_bin" || warn "ParamSpider install failed"
 
   # Install Playwright and Chromium
   info "Installing Playwright + Chromium..."
@@ -298,23 +444,34 @@ download_binaries() {
     info "Downloading findomain..."
     local fd_installed=false
 
-    # Strategy 1: GitHub API (asset name is 'findomain-linux', plain binary, no zip)
-    local fd_url
-    fd_url=$(curl -s "https://api.github.com/repos/Findomain/Findomain/releases/latest" \
-      | jq -r '.assets[] | select(.name == "findomain-linux") | .browser_download_url' \
+    # Strategy 1: zip release asset (current default)
+    local fd_url fd_bin
+    fd_url=$(curl -s "https://api.github.com/repos/findomain/findomain/releases/latest" \
+      | jq -r '.assets[] | select(.name == "findomain-linux.zip") | .browser_download_url' \
       2>/dev/null | head -1)
 
     if [ -n "$fd_url" ]; then
-      wget -q "$fd_url" -O "$LOCAL_BIN/findomain" 2>/dev/null && \
-        chmod +x "$LOCAL_BIN/findomain" && fd_installed=true
+      rm -rf /tmp/recon_findomain /tmp/recon_findomain.zip
+      mkdir -p /tmp/recon_findomain
+      if wget -q "$fd_url" -O /tmp/recon_findomain.zip 2>/dev/null && \
+         unzip -oq /tmp/recon_findomain.zip -d /tmp/recon_findomain 2>/dev/null; then
+        fd_bin=$(find /tmp/recon_findomain -type f -name findomain 2>/dev/null | head -1)
+        if [ -n "$fd_bin" ] && install -m 0755 "$fd_bin" "$LOCAL_BIN/findomain" 2>/dev/null; then
+          fd_installed=true
+        fi
+      fi
+      rm -rf /tmp/recon_findomain /tmp/recon_findomain.zip
     fi
 
-    # Strategy 2: pinned direct URL (fallback if API rate-limited)
+    # Strategy 2: legacy plain-binary asset
     if [ "$fd_installed" = false ]; then
-      warn "GitHub API failed, trying direct URL fallback..."
-      wget -q "https://github.com/Findomain/Findomain/releases/download/9.0.4/findomain-linux" \
-        -O "$LOCAL_BIN/findomain" 2>/dev/null && \
-        chmod +x "$LOCAL_BIN/findomain" && fd_installed=true
+      fd_url=$(curl -s "https://api.github.com/repos/findomain/findomain/releases/latest" \
+        | jq -r '.assets[] | select(.name == "findomain-linux") | .browser_download_url' \
+        2>/dev/null | head -1)
+      if [ -n "$fd_url" ] && wget -q "$fd_url" -O "$LOCAL_BIN/findomain" 2>/dev/null && \
+         chmod +x "$LOCAL_BIN/findomain"; then
+        fd_installed=true
+      fi
     fi
 
     # Strategy 3: apt install
@@ -336,18 +493,26 @@ download_binaries() {
   # kiterunner
   if ! command -v kr &>/dev/null; then
     info "Downloading kiterunner..."
-    local kr_url
+    local kr_url kr_bin
     kr_url=$(curl -s https://api.github.com/repos/assetnote/kiterunner/releases/latest \
       | jq -r '.assets[] | select(.name | test("linux_amd64")) | .browser_download_url' 2>/dev/null | head -1)
     if [ -n "$kr_url" ]; then
-      wget -q "$kr_url" -O /tmp/kr.tar.gz 2>/dev/null
-      tar xzf /tmp/kr.tar.gz -C /tmp/ 2>/dev/null
-      chmod +x /tmp/kr 2>/dev/null
-      mv /tmp/kr "$LOCAL_BIN/" 2>/dev/null
-      rm -f /tmp/kr.tar.gz
-      success "kiterunner installed"
+      rm -rf /tmp/recon_kr /tmp/recon_kr.tar.gz
+      mkdir -p /tmp/recon_kr
+      if wget -q "$kr_url" -O /tmp/recon_kr.tar.gz 2>/dev/null && \
+         tar xzf /tmp/recon_kr.tar.gz -C /tmp/recon_kr 2>/dev/null; then
+        kr_bin=$(find /tmp/recon_kr -type f -name kr 2>/dev/null | head -1)
+        if [ -n "$kr_bin" ] && install -m 0755 "$kr_bin" "$LOCAL_BIN/kr" 2>/dev/null; then
+          success "kiterunner installed"
+        else
+          warn "kiterunner extraction succeeded but binary install failed"
+        fi
+      else
+        warn "kiterunner download/extract failed"
+      fi
+      rm -rf /tmp/recon_kr /tmp/recon_kr.tar.gz
     else
-      warn "kiterunner download failed"
+      warn "kiterunner download URL not found"
     fi
   else
     success "kiterunner already installed"
@@ -356,18 +521,44 @@ download_binaries() {
   # feroxbuster
   if ! command -v feroxbuster &>/dev/null; then
     info "Downloading feroxbuster..."
-    local fb_url
+    local fb_url fb_bin
     fb_url=$(curl -s https://api.github.com/repos/epi052/feroxbuster/releases/latest \
       | jq -r '.assets[] | select(.name | test("x86_64-linux")) | .browser_download_url' 2>/dev/null | head -1)
     if [ -n "$fb_url" ]; then
-      wget -q "$fb_url" -O /tmp/feroxbuster.zip 2>/dev/null
-      unzip -oq /tmp/feroxbuster.zip -d /tmp/ 2>/dev/null
-      chmod +x /tmp/feroxbuster 2>/dev/null
-      mv /tmp/feroxbuster "$LOCAL_BIN/" 2>/dev/null
-      rm -f /tmp/feroxbuster.zip
-      success "feroxbuster installed"
+      rm -rf /tmp/recon_feroxbuster /tmp/recon_feroxbuster.zip /tmp/recon_feroxbuster.tar.gz
+      mkdir -p /tmp/recon_feroxbuster
+
+      if [[ "$fb_url" == *.zip ]]; then
+        if wget -q "$fb_url" -O /tmp/recon_feroxbuster.zip 2>/dev/null && \
+           unzip -oq /tmp/recon_feroxbuster.zip -d /tmp/recon_feroxbuster 2>/dev/null; then
+          :
+        else
+          warn "feroxbuster zip download/extract failed"
+        fi
+      elif [[ "$fb_url" == *.tar.gz ]] || [[ "$fb_url" == *.tgz ]]; then
+        if wget -q "$fb_url" -O /tmp/recon_feroxbuster.tar.gz 2>/dev/null && \
+           tar xzf /tmp/recon_feroxbuster.tar.gz -C /tmp/recon_feroxbuster 2>/dev/null; then
+          :
+        else
+          warn "feroxbuster tar download/extract failed"
+        fi
+      else
+        if wget -q "$fb_url" -O /tmp/recon_feroxbuster/feroxbuster 2>/dev/null; then
+          :
+        else
+          warn "feroxbuster direct binary download failed"
+        fi
+      fi
+
+      fb_bin=$(find /tmp/recon_feroxbuster -type f -name feroxbuster 2>/dev/null | head -1)
+      if [ -n "$fb_bin" ] && install -m 0755 "$fb_bin" "$LOCAL_BIN/feroxbuster" 2>/dev/null; then
+        success "feroxbuster installed"
+      else
+        warn "feroxbuster binary not found after download"
+      fi
+      rm -rf /tmp/recon_feroxbuster /tmp/recon_feroxbuster.zip /tmp/recon_feroxbuster.tar.gz
     else
-      warn "feroxbuster download failed"
+      warn "feroxbuster download URL not found"
     fi
   else
     success "feroxbuster already installed"
@@ -376,21 +567,55 @@ download_binaries() {
   # gitleaks
   if ! command -v gitleaks &>/dev/null; then
     info "Downloading gitleaks..."
-    local gl_url
+    local gl_url gl_bin
     gl_url=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
       | jq -r '.assets[] | select(.name | test("linux_x64")) | .browser_download_url' 2>/dev/null | head -1)
     if [ -n "$gl_url" ]; then
-      wget -q "$gl_url" -O /tmp/gitleaks.tar.gz 2>/dev/null
-      tar xzf /tmp/gitleaks.tar.gz -C /tmp/ 2>/dev/null
-      chmod +x /tmp/gitleaks 2>/dev/null
-      mv /tmp/gitleaks "$LOCAL_BIN/" 2>/dev/null
-      rm -f /tmp/gitleaks.tar.gz
-      success "gitleaks installed"
+      rm -rf /tmp/recon_gitleaks /tmp/recon_gitleaks.tar.gz /tmp/recon_gitleaks.zip
+      mkdir -p /tmp/recon_gitleaks
+
+      if [[ "$gl_url" == *.tar.gz ]] || [[ "$gl_url" == *.tgz ]]; then
+        if wget -q "$gl_url" -O /tmp/recon_gitleaks.tar.gz 2>/dev/null && \
+           tar xzf /tmp/recon_gitleaks.tar.gz -C /tmp/recon_gitleaks 2>/dev/null; then
+          :
+        else
+          warn "gitleaks tar download/extract failed"
+        fi
+      elif [[ "$gl_url" == *.zip ]]; then
+        if wget -q "$gl_url" -O /tmp/recon_gitleaks.zip 2>/dev/null && \
+           unzip -oq /tmp/recon_gitleaks.zip -d /tmp/recon_gitleaks 2>/dev/null; then
+          :
+        else
+          warn "gitleaks zip download/extract failed"
+        fi
+      else
+        if wget -q "$gl_url" -O /tmp/recon_gitleaks/gitleaks 2>/dev/null; then
+          :
+        else
+          warn "gitleaks direct binary download failed"
+        fi
+      fi
+
+      gl_bin=$(find /tmp/recon_gitleaks -type f -name gitleaks 2>/dev/null | head -1)
+      if [ -n "$gl_bin" ] && install -m 0755 "$gl_bin" "$LOCAL_BIN/gitleaks" 2>/dev/null; then
+        success "gitleaks installed"
+      else
+        warn "gitleaks binary not found after download"
+      fi
+      rm -rf /tmp/recon_gitleaks /tmp/recon_gitleaks.tar.gz /tmp/recon_gitleaks.zip
     else
-      warn "gitleaks download failed"
+      warn "gitleaks download URL not found"
     fi
   else
     success "gitleaks already installed"
+  fi
+
+  # trufflehog sanity fallback (in case Go install path failed earlier)
+  if ! command -v trufflehog &>/dev/null; then
+    info "Attempting trufflehog fallback install..."
+    install_trufflehog_binary || true
+  else
+    success "trufflehog already installed"
   fi
 }
 
@@ -401,66 +626,112 @@ download_wordlists() {
 
   info "Downloading wordlists..."
 
-  # SecLists DNS wordlists (sparse clone)
-  if [ ! -f "$wl_dir/dns/subdomains-top1million-110000.txt" ]; then
-    info "Downloading SecLists DNS wordlists..."
-    local seclists_dns="https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS"
-    wget -q "$seclists_dns/subdomains-top1million-110000.txt" -O "$wl_dir/dns/subdomains-top1million-110000.txt" 2>/dev/null && \
-      success "DNS wordlist downloaded" || warn "DNS wordlist download failed"
-    wget -q "$seclists_dns/dns-Jhaddix.txt" -O "$wl_dir/dns/dns-Jhaddix.txt" 2>/dev/null
-  else
-    success "DNS wordlists already exist"
+  local failures=0
+
+  download_validated_text_file \
+    "$wl_dir/dns/subdomains-top1million-110000.txt" \
+    1000 \
+    "DNS wordlist: subdomains-top1million-110000" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-110000.txt" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/main/Discovery/DNS/subdomains-top1million-110000.txt" || failures=$((failures + 1))
+
+  download_validated_text_file \
+    "$wl_dir/dns/dns-Jhaddix.txt" \
+    100 \
+    "DNS wordlist: dns-Jhaddix" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/dns-Jhaddix.txt" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/main/Discovery/DNS/dns-Jhaddix.txt" || failures=$((failures + 1))
+
+  download_validated_text_file \
+    "$wl_dir/dns/best-dns-wordlist.txt" \
+    100 \
+    "DNS wordlist: best-dns-wordlist" \
+    "https://wordlists-cdn.assetnote.io/data/manual/best-dns-wordlist.txt" || failures=$((failures + 1))
+
+  download_validated_text_file \
+    "$wl_dir/web/common.txt" \
+    100 \
+    "Web wordlist: common.txt" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/main/Discovery/Web-Content/common.txt" || failures=$((failures + 1))
+
+  download_validated_text_file \
+    "$wl_dir/web/raft-large-directories.txt" \
+    100 \
+    "Web wordlist: raft-large-directories" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/raft-large-directories.txt" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/main/Discovery/Web-Content/raft-large-directories.txt" || failures=$((failures + 1))
+
+  download_validated_text_file \
+    "$wl_dir/web/raft-large-files.txt" \
+    100 \
+    "Web wordlist: raft-large-files" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/raft-large-files.txt" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/main/Discovery/Web-Content/raft-large-files.txt" || failures=$((failures + 1))
+
+  download_validated_text_file \
+    "$wl_dir/web/burp-parameter-names.txt" \
+    20 \
+    "Web wordlist: burp-parameter-names" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/burp-parameter-names.txt" \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/main/Discovery/Web-Content/burp-parameter-names.txt" || failures=$((failures + 1))
+
+  if [ "$failures" -gt 0 ]; then
+    error "Wordlist installation failed for $failures required files"
+    return 1
   fi
 
-  # SecLists Web wordlists
-  if [ ! -f "$wl_dir/web/common.txt" ]; then
-    info "Downloading SecLists Web wordlists..."
-    local seclists_web="https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content"
-    wget -q "$seclists_web/common.txt" -O "$wl_dir/web/common.txt" 2>/dev/null
-    wget -q "$seclists_web/raft-large-directories.txt" -O "$wl_dir/web/raft-large-directories.txt" 2>/dev/null
-    wget -q "$seclists_web/raft-large-files.txt" -O "$wl_dir/web/raft-large-files.txt" 2>/dev/null
-    wget -q "$seclists_web/burp-parameter-names.txt" -O "$wl_dir/web/burp-parameter-names.txt" 2>/dev/null
-    success "Web wordlists downloaded"
-  else
-    success "Web wordlists already exist"
-  fi
-
-  # best-dns-wordlist from Assetnote
-  if [ ! -f "$wl_dir/dns/best-dns-wordlist.txt" ]; then
-    info "Downloading Assetnote best-dns-wordlist..."
-    wget -q "https://wordlists-cdn.assetnote.io/data/manual/best-dns-wordlist.txt" \
-      -O "$wl_dir/dns/best-dns-wordlist.txt" 2>/dev/null && \
-      success "best-dns-wordlist downloaded" || warn "best-dns-wordlist download failed"
-  else
-    success "best-dns-wordlist already exists"
-  fi
+  success "All required wordlists are installed"
 }
 
 # ─── 8. DOWNLOAD RESOLVERS ──────────────────────────────────
 download_resolvers() {
   local res_dir="$SCRIPT_DIR/data/resolvers"
+  local res_file="$res_dir/resolvers.txt"
   mkdir -p "$res_dir"
 
-  if [ ! -f "$res_dir/resolvers.txt" ] || [ "$(find "$res_dir/resolvers.txt" -mtime +7 2>/dev/null)" ]; then
-    info "Downloading fresh resolvers..."
-    wget -q "https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt" \
-      -O "$res_dir/resolvers.txt" 2>/dev/null && \
-      success "Resolvers downloaded ($(wc -l < "$res_dir/resolvers.txt" | tr -d ' ') entries)" || \
-      warn "Resolvers download failed"
-  else
-    success "Resolvers are up to date"
+  if file_has_min_lines "$res_file" 50 && [ -z "$(find "$res_file" -mtime +7 2>/dev/null)" ]; then
+    success "Resolvers are up to date ($(wc -l < "$res_file" | tr -d ' ') entries)"
+    return 0
   fi
+
+  if [ -f "$res_file" ]; then
+    warn "Resolvers file is stale or invalid. Refreshing..."
+  else
+    info "Downloading fresh resolvers..."
+  fi
+
+  if ! download_validated_text_file \
+    "$res_file" \
+    50 \
+    "Resolvers list" \
+    "https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt" \
+    "https://raw.githubusercontent.com/blechschmidt/massdns/master/lists/resolvers.txt"; then
+    error "Resolvers installation failed"
+    return 1
+  fi
+
+  success "Resolvers downloaded ($(wc -l < "$res_file" | tr -d ' ') entries)"
 }
 
 # ─── 9. DOWNLOAD GITHUB DORKS ───────────────────────────────
 download_dorks() {
   local dorks_dir="$SCRIPT_DIR/data/dorks"
+  local dorks_file="$dorks_dir/github_dorks.txt"
   mkdir -p "$dorks_dir"
 
   info "Downloading GitHub dorks..."
-  wget -q "https://raw.githubusercontent.com/Proviesec/github-dorks/main/dorks.txt" \
-    -O "$dorks_dir/github_dorks.txt" 2>/dev/null && \
-    success "GitHub dorks downloaded" || warn "GitHub dorks download failed"
+  if ! download_validated_text_file \
+    "$dorks_file" \
+    5 \
+    "GitHub dorks" \
+    "https://raw.githubusercontent.com/Proviesec/github-dorks/main/github-dorks.txt" \
+    "https://raw.githubusercontent.com/Proviesec/github-dorks/main/best-github-dorks.txt"; then
+    error "GitHub dorks installation failed"
+    return 1
+  fi
+
+  success "GitHub dorks are installed ($(wc -l < "$dorks_file" | tr -d ' ') lines)"
 }
 
 # ─── 10. DOWNLOAD KITERUNNER WORDLISTS ───────────────────────

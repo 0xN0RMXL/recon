@@ -72,6 +72,7 @@ init_workspace() {
 run_phase() {
   local PHASE_NAME="$1"
   local PHASE_FUNC="$2"
+  export CURRENT_PHASE=""
 
   # Check if phase is in the skip list
   if echo "$SKIP_PHASES" | grep -qw "$PHASE_NAME"; then
@@ -89,6 +90,8 @@ run_phase() {
     log info "Skipping phase $PHASE_NAME (already completed)"
     return 0
   fi
+
+  export CURRENT_PHASE="$PHASE_NAME"
 
   log info "═══════════════════════════════════════════"
   log info "Starting phase: $PHASE_NAME"
@@ -110,6 +113,7 @@ run_phase() {
 
   if [ $attempt -gt 3 ]; then
     state_mark_failed "$PHASE_NAME" "Failed after 3 attempts"
+    export CURRENT_PHASE=""
     log error "Phase $PHASE_NAME failed after 3 attempts. Skipping."
     notify "❌ Phase $PHASE_NAME FAILED on $TARGET"
     return 1
@@ -120,6 +124,7 @@ run_phase() {
   local ELAPSED=$((PHASE_END - PHASE_START))
 
   state_mark_done "$PHASE_NAME"
+  export CURRENT_PHASE=""
   log success "Phase $PHASE_NAME completed in ${ELAPSED}s"
   notify "✅ Phase $PHASE_NAME done on $TARGET (${ELAPSED}s)"
 }

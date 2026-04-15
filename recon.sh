@@ -40,6 +40,88 @@ THREADS=""
 RATE=""
 CONFIG="config.yaml"
 OUTPUT_BASE="./output"
+CURRENT_PHASE=""
+INTERRUPT_COUNT=0
+SHUTDOWN_IN_PROGRESS="false"
+
+has_child_processes() {
+  local pids
+  pids=$(jobs -pr 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    return 0
+  fi
+
+  if command -v pgrep &>/dev/null && pgrep -P $$ >/dev/null 2>&1; then
+    return 0
+  fi
+
+  return 1
+}
+
+stop_child_processes_gracefully() {
+  local pids
+
+  pids=$(jobs -pr 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    # shellcheck disable=SC2086
+    kill -TERM $pids 2>/dev/null || true
+  fi
+
+  if command -v pkill &>/dev/null; then
+    pkill -TERM -P $$ 2>/dev/null || true
+  fi
+}
+
+force_kill_child_processes() {
+  local pids
+
+  pids=$(jobs -pr 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    # shellcheck disable=SC2086
+    kill -KILL $pids 2>/dev/null || true
+  fi
+
+  if command -v pkill &>/dev/null; then
+    pkill -KILL -P $$ 2>/dev/null || true
+  fi
+}
+
+handle_interrupt() {
+  local signal_name="$1"
+
+  INTERRUPT_COUNT=$((INTERRUPT_COUNT + 1))
+
+  if [ "$SHUTDOWN_IN_PROGRESS" = "true" ]; then
+    if [ "$INTERRUPT_COUNT" -ge 2 ]; then
+      log warn "Second interrupt received. Force-stopping remaining processes..."
+      force_kill_child_processes
+      exit 130
+    fi
+    return
+  fi
+
+  SHUTDOWN_IN_PROGRESS="true"
+  log warn "Received $signal_name. Stopping gracefully. Press Ctrl+C again to force stop."
+
+  if [ -n "${WORKDIR:-}" ] && [ -n "${CURRENT_PHASE:-}" ] && [ -f "${WORKDIR}/meta/state.json" ]; then
+    state_mark_failed "$CURRENT_PHASE" "Interrupted by user ($signal_name)" 2>/dev/null || true
+  fi
+
+  stop_child_processes_gracefully
+
+  if has_child_processes; then
+    log warn "Waiting for child processes to stop..."
+    while has_child_processes; do
+      sleep 1
+    done
+  fi
+
+  log warn "Recon interrupted by user. Exiting."
+  exit 130
+}
+
+trap 'handle_interrupt SIGINT' SIGINT
+trap 'handle_interrupt SIGTERM' SIGTERM
 
 # ─── PARSE CLI ARGUMENTS ────────────────────────────────────
 parse_args() {

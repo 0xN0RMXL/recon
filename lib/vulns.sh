@@ -7,6 +7,7 @@
 nuclei_scan() {
   local IN="$WORKDIR/03_live_hosts/live.txt"
   local OUT="$WORKDIR/09_vulns"
+  local background_pids=()
 
   if [ ! -s "$IN" ]; then
     log warn "No live hosts found. Skipping vulnerability scanning."
@@ -100,25 +101,31 @@ nuclei_scan() {
       --skip-bav \
       --no-spinner \
       -o "$OUT/dalfox_xss.txt" 2>/dev/null &
-    local dalfox_pid=$!
+    background_pids+=("$!")
   fi
 
   # ── SQLMAP on parameter URLs ──────────────────────────────
   if [ -f "$HOME/tools/sqlmap/sqlmap.py" ] && [ -s "$WORKDIR/05_urls/categorized/php_urls.txt" ]; then
     log info "Running sqlmap on parameter URLs..."
     mkdir -p "$OUT/sqlmap"
-    grep '=' "$WORKDIR/05_urls/categorized/php_urls.txt" 2>/dev/null | head -20 | \
-      while IFS= read -r url; do
-        python3 "$HOME/tools/sqlmap/sqlmap.py" \
-          -u "$url" \
-          --dbs --banner --batch --random-agent \
-          --output-dir="$OUT/sqlmap/" \
-          -q 2>/dev/null &
-      done
+    while IFS= read -r url; do
+      python3 "$HOME/tools/sqlmap/sqlmap.py" \
+        -u "$url" \
+        --dbs --banner --batch --random-agent \
+        --output-dir="$OUT/sqlmap/" \
+        -q 2>/dev/null &
+      background_pids+=("$!")
+    done < <(grep '=' "$WORKDIR/05_urls/categorized/php_urls.txt" 2>/dev/null | head -20)
   fi
 
   # Wait for background jobs
-  wait
+  if [ "${#background_pids[@]}" -gt 0 ]; then
+    log info "Waiting for background vulnerability jobs to finish..."
+    local pid
+    for pid in "${background_pids[@]}"; do
+      wait "$pid" 2>/dev/null || true
+    done
+  fi
 
   # Ensure output files exist
   touch "$OUT/nuclei_all.txt" "$OUT/nuclei_critical.txt" "$OUT/nuclei_high.txt"

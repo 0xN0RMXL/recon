@@ -38,7 +38,7 @@ param_discovery() {
   fi
 
   # Hidden parameter brute-force via ffuf (from methodology)
-  if require_tool ffuf && [ -f "$WORDLIST_WEB_PARAMS" ] && [ -s "$WORKDIR/03_live_hosts/live.txt" ]; then
+  if require_tool ffuf && [ -s "$WORDLIST_WEB_PARAMS" ] && [ -s "$WORKDIR/03_live_hosts/live.txt" ]; then
     log info "Running ffuf hidden parameter brute-force..."
     head -20 "$WORKDIR/03_live_hosts/live.txt" | while IFS= read -r url; do
       ffuf -u "${url}?FUZZ=value" \

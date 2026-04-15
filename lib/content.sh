@@ -19,7 +19,7 @@ content_discovery() {
   [ "$BURP_ENABLED" = "true" ] && PROXY_ARG="-x $BURP_PROXY"
 
   # ── FFUF directory fuzzing ──
-  if require_tool ffuf && [ -f "$WORDLIST_WEB_COMMON" ]; then
+  if require_tool ffuf && [ -s "$WORDLIST_WEB_COMMON" ]; then
     log info "Running ffuf directory fuzzing..."
     while IFS= read -r url; do
       local hash
@@ -41,7 +41,7 @@ content_discovery() {
     rm -f /tmp/ffuf_*.json
 
     # Also run full extension sweep (from methodology)
-    if [ -f "$WORDLIST_WEB_RAFT_LARGE_FILES" ]; then
+    if [ -s "$WORDLIST_WEB_RAFT_LARGE_FILES" ]; then
       log info "Running ffuf extension sweep on top hosts..."
       head -20 "$IN" | while IFS= read -r url; do
         ffuf -u "${url}/FUZZ" \
@@ -67,7 +67,7 @@ content_discovery() {
   fi
 
   # ── feroxbuster ──
-  if require_tool feroxbuster && [ -f "$WORDLIST_WEB_RAFT_LARGE_DIRS" ]; then
+  if require_tool feroxbuster && [ -s "$WORDLIST_WEB_RAFT_LARGE_DIRS" ]; then
     log info "Running feroxbuster..."
     head -10 "$IN" | while IFS= read -r url; do
       feroxbuster -u "$url" \
@@ -81,7 +81,7 @@ content_discovery() {
   fi
 
   # ── gobuster ──
-  if require_tool gobuster && [ -f "$WORDLIST_WEB_COMMON" ]; then
+  if require_tool gobuster && [ -s "$WORDLIST_WEB_COMMON" ]; then
     log info "Running gobuster..."
     head -10 "$IN" | while IFS= read -r url; do
       gobuster dir -u "$url" \
@@ -114,7 +114,7 @@ content_discovery() {
   fi
 
   # ── Virtual Host enumeration ──
-  if require_tool ffuf && [ -f "$WORDLIST_DNS_BRUTEFORCE" ]; then
+  if require_tool ffuf && [ -s "$WORDLIST_DNS_BRUTEFORCE" ]; then
     log info "Running virtual host enumeration..."
     ffuf -u "https://$TARGET" \
       -w "$WORDLIST_DNS_BRUTEFORCE" \
