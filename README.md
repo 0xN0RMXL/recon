@@ -59,7 +59,7 @@ cd recon
 cp config.yaml.example config.yaml
 
 # 2. Run the one-shot installer (installs everything)
-bash install.sh
+sudo bash install.sh
 
 # 3. Add your API keys (optional but recommended)
 nano config.yaml
