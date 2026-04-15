@@ -1,0 +1,33 @@
+# Live config with API keys — never commit
+config.yaml
+
+# All recon output
+output/
+
+# Runtime logs
+logs/
+
+# Downloaded data files (populated by install.sh)
+data/wordlists/dns/*.txt
+data/wordlists/web/*.txt
+data/resolvers/resolvers.txt
+data/dorks/github_dorks.txt
+!data/**/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

@@ -1,0 +1,5 @@
+https://sub1.example.com
+https://api.example.com
+https://admin.example.com
+https://blog.example.com
+http://dev.example.com

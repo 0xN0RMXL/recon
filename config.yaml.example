@@ -1,0 +1,130 @@
+# ============================================================
+# RECON Framework — Configuration File
+# Copy to config.yaml and fill in your values.
+# NEVER commit config.yaml to version control.
+# ============================================================
+
+# ─── API KEYS ────────────────────────────────────────────────
+api_keys:
+  # ProjectDiscovery Chaos — https://cloud.projectdiscovery.io
+  chaos: ""
+
+  # GitHub Personal Access Token — https://github.com/settings/tokens
+  # Scopes needed: read:org, public_repo
+  github: ""
+
+  # Shodan — https://account.shodan.io
+  shodan: ""
+
+  # SecurityTrails — https://securitytrails.com/app/account
+  securitytrails: ""
+
+  # Censys — https://search.censys.io/account
+  censys_id: ""
+  censys_secret: ""
+
+  # VirusTotal — https://www.virustotal.com/gui/my-apikey
+  virustotal: ""
+
+  # URLScan — https://urlscan.io/user/profile
+  urlscan: ""
+
+  # AlienVault OTX — https://otx.alienvault.com/api
+  otx: ""
+
+  # Netlas — https://app.netlas.io/profile/
+  netlas: ""
+
+  # c99.nl subdomain finder — https://api.c99.nl
+  c99: ""
+
+  # FOFA — https://en.fofa.info/userInfo
+  fofa_email: ""
+  fofa_key: ""
+
+  # ZoomEye — https://www.zoomeye.org/profile
+  zoomeye: ""
+
+# ─── BURP SUITE ──────────────────────────────────────────────
+burp:
+  # Set to true to route all compatible tools through Burp proxy
+  enabled: false
+
+  # Burp proxy listener (default: 8080)
+  proxy: "http://127.0.0.1:8080"
+
+  # Burp Pro REST API (leave blank if using Community edition)
+  # Start API server in: Project Options > Misc > REST API
+  api_url: "http://127.0.0.1:1337"
+  api_key: ""
+
+  # Auto-send discovered URLs to Burp active scanner (Pro only)
+  auto_scan: false
+
+  # Auto-send high-priority endpoints (admin, api, auth, upload) to Burp
+  send_interesting: true
+
+# ─── NOTIFICATIONS ───────────────────────────────────────────
+notifications:
+  # Telegram bot notification on phase completion + findings
+  # Create bot: https://t.me/BotFather  |  Get chat ID: https://t.me/userinfobot
+  telegram_bot_token: ""
+  telegram_chat_id: ""
+
+  # Discord webhook
+  discord_webhook: ""
+
+  # Slack webhook
+  slack_webhook: ""
+
+# ─── PERFORMANCE ─────────────────────────────────────────────
+performance:
+  # Thread counts per tool category
+  httpx_threads: 200
+  nuclei_rate: 150
+  ffuf_threads: 200
+  naabu_rate: 2000
+  gau_threads: 200
+  katana_depth: 5
+  katana_concurrency: 50
+
+# ─── WORDLISTS ───────────────────────────────────────────────
+wordlists:
+  # Paths are relative to the data/wordlists directory inside the project.
+  # The installer downloads these automatically if missing.
+  dns_bruteforce: "dns/subdomains-top1million-110000.txt"
+  dns_best: "dns/best-dns-wordlist.txt"
+  dns_jhaddix: "dns/dns-Jhaddix.txt"
+  web_raft_large_dirs: "web/raft-large-directories.txt"
+  web_raft_large_files: "web/raft-large-files.txt"
+  web_common: "web/common.txt"
+  web_params: "web/burp-parameter-names.txt"
+  resolvers: "../../data/resolvers/resolvers.txt"
+
+# ─── SCOPE ───────────────────────────────────────────────────
+scope:
+  # When false: collect everything, flag out-of-scope but don't discard
+  strict: false
+
+  # Optional: path to a scope file (one domain/CIDR per line)
+  # scope_file: ""
+
+# ─── OUTPUT ──────────────────────────────────────────────────
+output:
+  # Base output directory (relative to recon.sh location)
+  base_dir: "./output"
+
+  # Formats to generate for final report
+  formats:
+    - json
+    - markdown
+    - html
+
+# ─── DISTRIBUTED SCANNING ────────────────────────────────────
+distributed:
+  enabled: false
+  # SSH connection strings, one per line
+  nodes:
+    - ""
+    # - "user@vps1.example.com"
+    # - "user@vps2.example.com"

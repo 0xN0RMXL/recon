@@ -1,0 +1,10 @@
+https://api.example.com/api/v1/users
+https://api.example.com/api/v1/admin
+https://admin.example.com/login
+https://admin.example.com/dashboard
+https://sub1.example.com/upload/file
+https://dev.example.com/graphql
+https://blog.example.com/about
+https://sub1.example.com/assets/main.js
+https://api.example.com/reset-password
+https://dev.example.com/redirect?url=test

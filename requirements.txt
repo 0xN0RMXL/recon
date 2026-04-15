@@ -1,0 +1,7 @@
+trufflehog
+arjun
+dirsearch
+waymore
+paramspider
+playwright
+beautifulsoup4
