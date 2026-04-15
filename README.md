@@ -56,6 +56,7 @@
 # 1. Clone the repository
 git clone https://github.com/0xN0RMXL/recon.git
 cd recon
+cp config.yaml.example config.yaml
 
 # 2. Run the one-shot installer (installs everything)
 sudo bash install.sh
