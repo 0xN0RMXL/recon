@@ -86,14 +86,22 @@ nuclei_scan() {
     : > "$OUT/nuclei_all.txt"
   fi
 
-  # Split by severity
-  for sev in critical high medium low info; do
-    grep "\"severity\":\"$sev\"" "$OUT/nuclei_all.json" 2>>"$ERR_LOG" \
-      > "$OUT/nuclei_${sev}.json"
-    jq -r '.matched_at + " [" + .info.severity + "] " + .info.name' \
-      "$OUT/nuclei_${sev}.json" 2>>"$ERR_LOG" \
-      > "$OUT/nuclei_${sev}.txt"
-  done
+  # Split by severity (nuclei v3 JSONL uses .info.severity)
+  if [ -s "$OUT/nuclei_all.json" ]; then
+    for sev in critical high medium low info; do
+      jq -c --arg sev "$sev" 'select((.info.severity // "") == $sev)' \
+        "$OUT/nuclei_all.json" 2>>"$ERR_LOG" \
+        > "$OUT/nuclei_${sev}.json"
+      jq -r '.matched_at + " [" + .info.severity + "] " + .info.name' \
+        "$OUT/nuclei_${sev}.json" 2>>"$ERR_LOG" \
+        > "$OUT/nuclei_${sev}.txt"
+    done
+  else
+    for sev in critical high medium low info; do
+      : > "$OUT/nuclei_${sev}.json"
+      : > "$OUT/nuclei_${sev}.txt"
+    done
+  fi
 
   # Notify on critical findings
   if [ -s "$OUT/nuclei_critical.txt" ]; then

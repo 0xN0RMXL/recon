@@ -746,6 +746,32 @@ download_wordlists() {
     "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/burp-parameter-names.txt" \
     "https://raw.githubusercontent.com/danielmiessler/SecLists/main/Discovery/Web-Content/burp-parameter-names.txt" || failures=$((failures + 1))
 
+  local bypass_headers_file="$wl_dir/web/403-bypass-headers.txt"
+  if ! download_validated_text_file \
+    "$bypass_headers_file" \
+    5 \
+    "Web wordlist: 403-bypass-headers" \
+    "https://raw.githubusercontent.com/iamj0ker/bypass-403/main/headers.txt" \
+    "https://raw.githubusercontent.com/0xInfection/Awesome-WAF/main/headers/headers.txt"; then
+    warn "Could not download 403 bypass headers wordlist; writing minimal fallback list"
+    cat > "$bypass_headers_file" <<'EOF'
+X-Original-URL: /
+X-Rewrite-URL: /
+X-Custom-IP-Authorization: 127.0.0.1
+X-Forwarded-For: 127.0.0.1
+X-Client-IP: 127.0.0.1
+X-Host: 127.0.0.1
+X-Forwarded-Host: 127.0.0.1
+X-Remote-IP: 127.0.0.1
+X-Originating-IP: 127.0.0.1
+X-Remote-Addr: 127.0.0.1
+EOF
+
+    if ! file_has_min_lines "$bypass_headers_file" 5; then
+      failures=$((failures + 1))
+    fi
+  fi
+
   if [ "$failures" -gt 0 ]; then
     error "Wordlist installation failed for $failures required files"
     return 1

@@ -14,8 +14,6 @@ if [ "$(id -u)" -eq 0 ]; then
   fi
 fi
 
-set -o pipefail
-
 # ─── SCRIPT DIRECTORY DETECTION ──────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"

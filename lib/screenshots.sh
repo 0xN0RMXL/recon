@@ -23,13 +23,34 @@ take_screenshots() {
     return 1
   fi
 
-  gowitness scan file \
+  if gowitness scan \
+    --file "$IN" \
+    --screenshot-path "$OUT/" \
+    --db-path "$OUT/gowitness.db" \
+    --threads 10 \
+    --timeout 10 \
+    2>>"$ERR_LOG"; then
+    :
+  elif gowitness scan file \
     -f "$IN" \
     --screenshot-path "$OUT/" \
     --db-path "$OUT/gowitness.db" \
     --threads 10 \
     --timeout 10 \
-    2>>"$ERR_LOG"
+    2>>"$ERR_LOG"; then
+    log warn "gowitness v3 scan syntax failed; used scan file compatibility mode"
+  elif gowitness file \
+    -f "$IN" \
+    --screenshot-path "$OUT/" \
+    --db-path "$OUT/gowitness.db" \
+    --threads 10 \
+    --timeout 10 \
+    2>>"$ERR_LOG"; then
+    log warn "gowitness scan modes failed; used legacy file mode"
+  else
+    log error "gowitness failed with v3 and legacy syntax. See $ERR_LOG"
+    return 1
+  fi
 
   log info "Screenshots saved to $OUT/"
   log success "Screenshot capture phase complete"

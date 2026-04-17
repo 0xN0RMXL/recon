@@ -65,10 +65,15 @@ collect_urls() {
   if require_tool gau; then
     log info "Running gau..."
     local GAU_PROVIDERS="wayback,commoncrawl,otx,urlscan"
-    cat "$IN" | gau \
+    local tmp_gau_inputs="/tmp/recon_gau_inputs_$$.txt"
+    sed -E 's#^https?://##; s#/.*$##; s#:[0-9]+$##' "$IN" | sort -u > "$tmp_gau_inputs"
+
+    cat "$tmp_gau_inputs" | gau \
       --threads "$GAU_THREADS" \
       --providers "$GAU_PROVIDERS" \
       >> "$OUT/raw/gau.txt" 2>>"$ERR_LOG"
+
+    rm -f "$tmp_gau_inputs"
     check_output "$OUT/raw/gau.txt" "gau"
   fi
 
@@ -97,6 +102,7 @@ collect_urls() {
   if require_tool gospider; then
     log info "Running gospider..."
     local tmp_gospider="/tmp/gospider_raw_$$"
+    mkdir -p "$tmp_gospider"
     gospider -S "$IN" \
       -t 20 -d 3 \
       --js --sitemap --robots \

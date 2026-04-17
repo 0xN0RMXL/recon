@@ -30,9 +30,19 @@ github_dorking() {
     return 0
   fi
 
-  # Write token to temp file for GitDorker
-  local token_file="/tmp/github_token_$$.txt"
-  echo "$GITHUB_TOKEN" > "$token_file"
+  # Write token to secure temp file for GitDorker
+  local token_file
+  token_file=$(mktemp /tmp/recon_github_token.XXXXXX 2>>"$ERR_LOG") || {
+    log error "Failed to create secure token temp file"
+    return 1
+  }
+  chmod 600 "$token_file" 2>>"$ERR_LOG" || true
+
+  if ! printf '%s\n' "$GITHUB_TOKEN" > "$token_file"; then
+    rm -f "$token_file"
+    log error "Failed to write GitHub token temp file"
+    return 1
+  fi
 
   # GitDorker (from methodology)
   log info "Running GitDorker..."

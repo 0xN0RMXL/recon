@@ -56,7 +56,7 @@ port_scan() {
     awk -F: '{print $1}' "$OUT/naabu_ports.txt" | sort -u > "$tmp_ips"
     nmap -iL "$tmp_ips" \
       -T4 -Pn -sV \
-      -o "$OUT/nmap_services.txt" 2>>"$ERR_LOG"
+      -oN "$OUT/nmap_services.txt" 2>>"$ERR_LOG"
     rm -f "$tmp_ips"
     check_output "$OUT/nmap_services.txt" "nmap"
   fi

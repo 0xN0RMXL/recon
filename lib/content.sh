@@ -10,8 +10,10 @@ content_discovery() {
   local ERR_LOG="$OUT/content_errors.log"
   local CONTENT_IN="$IN"
   local tmp_content_in=""
+  local ffuf_tmp_dir="/tmp/recon_ffuf_${$}"
 
   : > "$ERR_LOG"
+  mkdir -p "$ffuf_tmp_dir"
 
   if [ ! -s "$IN" ]; then
     log warn "No live hosts found. Skipping content discovery."
@@ -48,15 +50,15 @@ content_discovery() {
         -mc 200,201,301,302,307,308,401,403 \
         -ac \
         $PROXY_ARG \
-        -o "/tmp/ffuf_${hash}.json" \
+        -o "$ffuf_tmp_dir/ffuf_${hash}.json" \
         -of json -s 2>>"$ERR_LOG" || true
     done < "$CONTENT_IN"
 
     # Merge ffuf results
-    find /tmp/ -name "ffuf_*.json" -exec jq -r '.results[].url' {} \; \
+    find "$ffuf_tmp_dir" -name "ffuf_*.json" -exec jq -r '.results[].url' {} \; \
       2>>"$ERR_LOG" | sort -u > "$OUT/ffuf_dirs.txt"
-    find /tmp/ -name "ffuf_*.json" -exec cat {} \; 2>>"$ERR_LOG" > "$OUT/ffuf_dirs.json"
-    rm -f /tmp/ffuf_*.json
+    find "$ffuf_tmp_dir" -name "ffuf_*.json" -exec cat {} \; 2>>"$ERR_LOG" > "$OUT/ffuf_dirs.json"
+    rm -rf "$ffuf_tmp_dir"
 
     # Also run full extension sweep (from methodology)
     if [ -s "$WORDLIST_WEB_RAFT_LARGE_FILES" ]; then
@@ -74,15 +76,20 @@ content_discovery() {
 
     # ── 403 bypass attempts (from methodology) ──
     if grep -q "403" "$WORKDIR/03_live_hosts/live_detailed.txt" 2>>"$ERR_LOG"; then
-      log info "Attempting 403 bypass..."
-      grep " 403 " "$WORKDIR/03_live_hosts/live_detailed.txt" | \
-        grep -oE "https?://[^ ]+" | \
-        { if [ "${CONTENT_MAX_HOSTS:-20}" -gt 0 ]; then head -n "$CONTENT_MAX_HOSTS"; else cat; fi; } | \
-        while IFS= read -r url; do
-          ffuf -u "$url" \
-            -w "$DATA_DIR/wordlists/web/403-bypass-headers.txt" \
-            -H "FUZZ" -mc 200,301,302 -s 2>>"$ERR_LOG" >> "$OUT/ffuf_dirs.txt"
-        done
+      local bypass_wl="$DATA_DIR/wordlists/web/403-bypass-headers.txt"
+      if [ -s "$bypass_wl" ]; then
+        log info "Attempting 403 bypass..."
+        grep " 403 " "$WORKDIR/03_live_hosts/live_detailed.txt" | \
+          grep -oE "https?://[^ ]+" | \
+          { if [ "${CONTENT_MAX_HOSTS:-20}" -gt 0 ]; then head -n "$CONTENT_MAX_HOSTS"; else cat; fi; } | \
+          while IFS= read -r url; do
+            ffuf -u "$url" \
+              -w "$bypass_wl" \
+              -H "FUZZ" -mc 200,301,302 -s 2>>"$ERR_LOG" >> "$OUT/ffuf_dirs.txt"
+          done
+      else
+        log warn "Skipping 403 bypass: missing wordlist $bypass_wl (run install.sh)"
+      fi
     fi
   fi
 
@@ -164,6 +171,7 @@ content_discovery() {
   fi
 
   [ -n "$tmp_content_in" ] && rm -f "$tmp_content_in"
+  [ -d "$ffuf_tmp_dir" ] && rm -rf "$ffuf_tmp_dir"
 
   log success "Content discovery phase complete"
 }

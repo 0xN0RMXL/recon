@@ -19,6 +19,14 @@ state_phase_checkpoint_file() {
   echo "$WORKDIR/meta/.phase_${phase}.inprogress"
 }
 
+state_require_jq() {
+  if ! command -v jq &>/dev/null; then
+    log error "jq is required for safe state updates but was not found"
+    return 1
+  fi
+  return 0
+}
+
 state_mark_running() {
   local phase="$1"
   local attempt="${2:-1}"
@@ -31,11 +39,21 @@ state_mark_running() {
 
   echo "running attempt=$attempt ts=$ts" > "$checkpoint_file"
 
-  if command -v jq &>/dev/null && [ -f "$state_file" ]; then
-    jq --arg p "$phase" --arg t "$ts" --argjson a "$attempt" \
-      '.[$p] = {"status":"running","ts":$t,"attempt":$a}' \
-      "$state_file" > "${state_file}.tmp" && \
-    mv "${state_file}.tmp" "$state_file"
+  state_require_jq || return 1
+  [ -f "$state_file" ] || echo '{}' > "$state_file"
+
+  if ! jq --arg p "$phase" --arg t "$ts" --argjson a "$attempt" \
+    '.[$p] = {"status":"running","ts":$t,"attempt":$a}' \
+    "$state_file" > "${state_file}.tmp"; then
+    rm -f "${state_file}.tmp"
+    log error "Failed to update state for running phase: $phase"
+    return 1
+  fi
+
+  if ! mv "${state_file}.tmp" "$state_file"; then
+    rm -f "${state_file}.tmp"
+    log error "Failed to finalize state update for running phase: $phase"
+    return 1
   fi
 }
 
@@ -143,14 +161,21 @@ state_mark_done() {
   local ts
   ts=$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S')
 
-  if command -v jq &>/dev/null; then
-    jq --arg p "$phase" --arg t "$ts" \
-      '.[$p] = {"status":"done","ts":$t}' \
-      "$state_file" > "${state_file}.tmp" && \
-    mv "${state_file}.tmp" "$state_file"
-  else
-    # Fallback: simple append (not ideal but works)
-    sed -i "s/}$/,\"${phase}\":{\"status\":\"done\",\"ts\":\"${ts}\"}}/" "$state_file" 2>/dev/null
+  state_require_jq || return 1
+  [ -f "$state_file" ] || echo '{}' > "$state_file"
+
+  if ! jq --arg p "$phase" --arg t "$ts" \
+    '.[$p] = {"status":"done","ts":$t}' \
+    "$state_file" > "${state_file}.tmp"; then
+    rm -f "${state_file}.tmp"
+    log error "Failed to update state for completed phase: $phase"
+    return 1
+  fi
+
+  if ! mv "${state_file}.tmp" "$state_file"; then
+    rm -f "${state_file}.tmp"
+    log error "Failed to finalize state update for completed phase: $phase"
+    return 1
   fi
 }
 
@@ -162,13 +187,21 @@ state_mark_failed() {
   local ts
   ts=$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S')
 
-  if command -v jq &>/dev/null; then
-    jq --arg p "$phase" --arg t "$ts" --arg e "$error_msg" \
-      '.[$p] = {"status":"failed","ts":$t,"error":$e}' \
-      "$state_file" > "${state_file}.tmp" && \
-    mv "${state_file}.tmp" "$state_file"
-  else
-    sed -i "s/}$/,\"${phase}\":{\"status\":\"failed\",\"ts\":\"${ts}\",\"error\":\"${error_msg}\"}}/" "$state_file" 2>/dev/null
+  state_require_jq || return 1
+  [ -f "$state_file" ] || echo '{}' > "$state_file"
+
+  if ! jq --arg p "$phase" --arg t "$ts" --arg e "$error_msg" \
+    '.[$p] = {"status":"failed","ts":$t,"error":$e}' \
+    "$state_file" > "${state_file}.tmp"; then
+    rm -f "${state_file}.tmp"
+    log error "Failed to update state for failed phase: $phase"
+    return 1
+  fi
+
+  if ! mv "${state_file}.tmp" "$state_file"; then
+    rm -f "${state_file}.tmp"
+    log error "Failed to finalize state update for failed phase: $phase"
+    return 1
   fi
 }
 

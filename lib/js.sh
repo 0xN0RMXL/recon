@@ -67,7 +67,7 @@ js_analysis() {
         "(AKIA[0-9A-Z]{16}|api[_-]?key[\"' ]*[:=][\"' ]*[a-zA-Z0-9_-]{10,}|token[\"' ]*[:=][\"' ]*[a-zA-Z0-9_-]{10,}|secret[\"' ]*[:=][\"' ]*[a-zA-Z0-9_-]{10,}|password[\"' ]*[:=][\"' ]*[a-zA-Z0-9_-]{8,}|bearer [a-zA-Z0-9_-]{20,})" \
         >> "$OUT/extracted_secrets.txt" 2>>"$ERR_LOG"
 
-      ((js_count++))
+      js_count=$((js_count + 1))
     fi
   done < "$JS_URLS"
 

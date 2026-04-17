@@ -24,10 +24,50 @@ param_discovery() {
       --threads 50 \
       -o "$OUT/arjun.json" 2>>"$ERR_LOG"
 
-    # Parse arjun output
+    # Parse arjun output (supports both v2 object and legacy array formats)
     if [ -s "$OUT/arjun.json" ]; then
-      jq -r '.[] | .url + "?" + (.params | join("=FUZZ&")) + "=FUZZ"' \
-        "$OUT/arjun.json" 2>>"$ERR_LOG" >> "$OUT/all_params.txt"
+      jq -r '
+        def norm_params(p):
+          if p == null then []
+          elif (p|type) == "array" then p
+          elif (p|type) == "object" then
+            (p.params // p.parameters // p.query_params // []
+              | if (.|type) == "array" then .
+                elif (.|type) == "object" then keys
+                else [] end)
+          else [] end
+          | map(select(type == "string" and length > 0));
+
+        def emit(u; p):
+          (norm_params(p)) as $ps
+          | if (u|type) == "string" and (u|length) > 0 and ($ps|length) > 0 then
+              u + (if (u|contains("?")) then "&" else "?" end) +
+              ($ps | map(. + "=FUZZ") | join("&"))
+            else
+              empty
+            end;
+
+        if type == "array" then
+          .[] | emit((.url // .endpoint // .target // empty); (.params // .parameters // .query_params // .))
+        elif type == "object" then
+          if has("url") and (has("params") or has("parameters") or has("query_params")) then
+            emit((.url // .endpoint // .target // empty); (.params // .parameters // .query_params))
+          else
+            to_entries[] |
+              if (.value|type) == "object" then
+                if (.value|has("params") or .value|has("parameters") or .value|has("query_params")) then
+                  emit(.key; (.value.params // .value.parameters // .value.query_params))
+                else
+                  emit(.key; .value)
+                end
+              else
+                emit(.key; .value)
+              end
+          end
+        else
+          empty
+        end
+      ' "$OUT/arjun.json" 2>>"$ERR_LOG" >> "$OUT/all_params.txt"
     fi
     check_output "$OUT/arjun.json" "arjun"
   fi
