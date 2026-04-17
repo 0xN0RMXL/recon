@@ -54,15 +54,6 @@ banner() {
   echo '  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝'
   echo -e "${RESET}"
   echo -e "${BOLD}  Autonomous Bug Bounty Recon Framework v${VERSION}${RESET}"
-  echo -e "${CYAN}  ────────────────────────────────────────────${RESET}"
-  echo ""
-  echo -e "${YELLOW}  ⚠  LEGAL DISCLAIMER${RESET}"
-  echo -e "  This tool is designed for ${BOLD}authorized security testing${RESET} and"
-  echo -e "  ${BOLD}bug bounty programs ONLY${RESET}. Unauthorized use against systems"
-  echo -e "  you do not own or have written permission to test is ${RED}ILLEGAL${RESET}."
-  echo -e "  The authors accept ${BOLD}no liability${RESET} for misuse."
-  echo ""
-  echo -e "${CYAN}  ────────────────────────────────────────────${RESET}"
   echo ""
 }
 
