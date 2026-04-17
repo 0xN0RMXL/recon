@@ -8,13 +8,16 @@ diff_assets() {
   local PREV="$WORKDIR/meta/previous_subdomains.txt"
   local CUR="$WORKDIR/01_subdomains/all_subdomains.txt"
   local OUT="$WORKDIR/intelligence/diff_new_assets.txt"
+  local ERR_LOG="$WORKDIR/intelligence/diff_errors.log"
+
+  : > "$ERR_LOG"
 
   log info "Intelligence: Differential asset analysis starting"
 
   if [ -f "$PREV" ]; then
-    comm -13 <(sort "$PREV") <(sort "$CUR") > "$OUT" 2>/dev/null
+    comm -13 <(sort "$PREV") <(sort "$CUR") > "$OUT" 2>>"$ERR_LOG"
     local NEW_COUNT
-    NEW_COUNT=$(wc -l < "$OUT" 2>/dev/null | tr -d ' ')
+    NEW_COUNT=$(wc -l < "$OUT" 2>>"$ERR_LOG" | tr -d ' ')
     if [ "${NEW_COUNT:-0}" -gt 0 ]; then
       log warn "NEW ASSETS DETECTED: $NEW_COUNT new subdomains since last run!"
       notify "🆕 $NEW_COUNT new subdomains found for $TARGET"
@@ -27,7 +30,7 @@ diff_assets() {
   fi
 
   # Save current as previous for next run
-  cp "$CUR" "$PREV" 2>/dev/null
+  cp "$CUR" "$PREV" 2>>"$ERR_LOG"
 
   log success "Differential asset analysis complete"
 }

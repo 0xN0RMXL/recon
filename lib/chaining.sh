@@ -6,6 +6,9 @@
 
 chain_analysis() {
   local OUT="$WORKDIR/intelligence/bug_chains.txt"
+  local ERR_LOG="$WORKDIR/intelligence/chaining_errors.log"
+
+  : > "$ERR_LOG"
 
   log info "Intelligence: Bug chain analysis starting"
 
@@ -32,8 +35,8 @@ chain_analysis() {
     fi
 
     # Chain 3: Open redirect + OAuth → Token hijack
-    if grep -q "redirect\|goto\|return" "$WORKDIR/05_urls/categorized/interesting_endpoints.txt" 2>/dev/null && \
-       grep -q "oauth\|auth" "$WORKDIR/05_urls/categorized/login_flows.txt" 2>/dev/null; then
+    if grep -q "redirect\|goto\|return" "$WORKDIR/05_urls/categorized/interesting_endpoints.txt" 2>>"$ERR_LOG" && \
+       grep -q "oauth\|auth" "$WORKDIR/05_urls/categorized/login_flows.txt" 2>>"$ERR_LOG"; then
       echo ""
       echo "[CHAIN] Open redirect + OAuth → OAuth token hijacking"
       echo "  Step 1: Confirm open redirect at interesting endpoints"
@@ -41,7 +44,7 @@ chain_analysis() {
     fi
 
     # Chain 4: SSRF + Cloud metadata
-    if grep -q "url=\|r=\|u=\|dest=" "$WORKDIR/05_urls/categorized/interesting_endpoints.txt" 2>/dev/null && \
+    if grep -q "url=\|r=\|u=\|dest=" "$WORKDIR/05_urls/categorized/interesting_endpoints.txt" 2>>"$ERR_LOG" && \
        [ -s "$WORKDIR/10_cloud/buckets.txt" ]; then
       echo ""
       echo "[CHAIN] SSRF candidate + Cloud environment → AWS metadata exfiltration"

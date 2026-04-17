@@ -275,6 +275,13 @@ cp config.yaml.example config.yaml
 nano config.yaml
 ```
 
+### Configuration Security Policy
+
+- `config.yaml` is intentionally ignored by git because it contains runtime secrets.
+- `config.yaml.example` is safe to track and is the only config template that should be committed.
+- Never commit API keys or webhooks to any branch or fork.
+- For alternate environments (for example CI), use `--config PATH` to point to a separate local config file.
+
 ### Step 2: Add API Keys
 
 API keys are **all optional** — the framework works without them but discovers significantly more with them.
@@ -295,6 +302,16 @@ API keys are **all optional** — the framework works without them but discovers
 | FOFA | 💰 Paid | Chinese internet search engine | [en.fofa.info](https://en.fofa.info/userInfo) |
 
 > **💡 Recommended minimum:** GitHub token + Chaos key + free accounts. This covers ~80% of discovery capability.
+
+### Config Migration After Updates
+
+When new releases add options to `config.yaml.example`, merge new keys into your local `config.yaml`:
+
+```bash
+diff -u config.yaml.example config.yaml
+```
+
+Add missing settings from the template, then keep your secrets only in local files.
 
 ### Step 3: Configure Notifications (Optional)
 
@@ -423,6 +440,8 @@ Verify all tools are installed and working:
 bash doctor.sh
 ```
 
+`doctor.sh` now performs runtime readiness checks for critical tools (`naabu`, `waymore`, `puredns`, `massdns`) and includes a lightweight `puredns`+`massdns` interoperability probe.
+
 ### Update Everything
 
 Keep tools, templates, wordlists, and resolvers up to date:
@@ -430,6 +449,10 @@ Keep tools, templates, wordlists, and resolvers up to date:
 ```bash
 bash update.sh
 ```
+
+### Runtime Error Logs
+
+Each phase now writes structured stderr logs to its own output directory (for example `*_errors.log` files in phase folders). When a critical phase hard-fails, check that phase error log first.
 
 ### Run Tests
 
@@ -459,6 +482,27 @@ Press `Ctrl+C` once for graceful shutdown. RECON will mark the active phase as i
 Press `Ctrl+C` a second time to force-stop any stubborn child processes immediately.
 
 After interruption, rerun with `--resume`. The state machine tracks every phase's completion status and skips completed phases.
+
+### Q: Why did my scan stop after one phase failed?
+
+Critical phases now use a hard-stop policy. If foundational outputs are empty or invalid after retries, RECON stops instead of continuing with corrupted downstream inputs.
+
+For root-cause details, inspect the phase-local error log in the output directory (for example `02_dns/dns_errors.log`, `04_ports/ports_errors.log`, `05_urls/raw/urls_errors.log`).
+
+### Q: How do I tune wildcard-scale runs without hidden truncation?
+
+Use the new `performance` controls in `config.yaml`:
+
+- `analyzer_max_hosts`
+- `content_max_hosts`
+- `vulns_max_hosts`
+- `params_max_hosts`
+- `waymore_fallback_max_hosts`
+- `hypothesis_max_per_pattern`
+- `sqlmap_max_targets`
+- `sqlmap_max_concurrent`
+
+These controls make host sampling explicit (with warning logs) instead of silent `head`-only truncation.
 
 ### Q: Why does doctor fail on wordlists/resolvers/dorks now?
 

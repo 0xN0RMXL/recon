@@ -7,6 +7,9 @@
 probe_hosts() {
   local IN="$WORKDIR/01_subdomains/all_subdomains.txt"
   local OUT="$WORKDIR/03_live_hosts"
+  local ERR_LOG="$OUT/probe_errors.log"
+
+  : > "$ERR_LOG"
 
   if [ ! -s "$IN" ]; then
     log warn "No subdomains found. Skipping probe."
@@ -33,7 +36,7 @@ probe_hosts() {
     -threads "$HTTPX_THREADS" \
     $PROXY_ARGS \
     -o "$OUT/live_detailed.txt" \
-    -silent 2>/dev/null
+    -silent 2>>"$ERR_LOG"
 
   # Extract plain URL list
   if [ -s "$OUT/live_detailed.txt" ]; then
@@ -42,7 +45,7 @@ probe_hosts() {
   fi
 
   local count
-  count=$(wc -l < "$OUT/live.txt" 2>/dev/null | tr -d ' ')
+  count=$(wc -l < "$OUT/live.txt" 2>>"$ERR_LOG" | tr -d ' ')
   log success "Live hosts: ${count:-0}"
 
   # Send to Burp Pro scanner if enabled

@@ -1,4 +1,4 @@
-# Live config with API keys — never commit
+# Live config with API keys — intentionally ignored (safe template: config.yaml.example)
 config.yaml
 
 # All recon output

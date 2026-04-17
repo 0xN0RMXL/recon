@@ -201,6 +201,14 @@ load_config() {
   _export_yaml_key GAU_THREADS '.performance.gau_threads'
   _export_yaml_key KATANA_DEPTH '.performance.katana_depth'
   _export_yaml_key KATANA_CONCURRENCY '.performance.katana_concurrency'
+  _export_yaml_key ANALYZER_MAX_HOSTS '.performance.analyzer_max_hosts'
+  _export_yaml_key CONTENT_MAX_HOSTS '.performance.content_max_hosts'
+  _export_yaml_key VULNS_MAX_HOSTS '.performance.vulns_max_hosts'
+  _export_yaml_key PARAMS_MAX_HOSTS '.performance.params_max_hosts'
+  _export_yaml_key WAYMORE_FALLBACK_MAX_HOSTS '.performance.waymore_fallback_max_hosts'
+  _export_yaml_key HYPOTHESIS_MAX_PER_PATTERN '.performance.hypothesis_max_per_pattern'
+  _export_yaml_key SQLMAP_MAX_TARGETS '.performance.sqlmap_max_targets'
+  _export_yaml_key SQLMAP_MAX_CONCURRENT '.performance.sqlmap_max_concurrent'
 
   # Defaults
   [ -z "$HTTPX_THREADS" ] && export HTTPX_THREADS=200
@@ -210,6 +218,14 @@ load_config() {
   [ -z "$GAU_THREADS" ] && export GAU_THREADS=200
   [ -z "$KATANA_DEPTH" ] && export KATANA_DEPTH=5
   [ -z "$KATANA_CONCURRENCY" ] && export KATANA_CONCURRENCY=50
+  [ -z "$ANALYZER_MAX_HOSTS" ] && export ANALYZER_MAX_HOSTS=50
+  [ -z "$CONTENT_MAX_HOSTS" ] && export CONTENT_MAX_HOSTS=20
+  [ -z "$VULNS_MAX_HOSTS" ] && export VULNS_MAX_HOSTS=0
+  [ -z "$PARAMS_MAX_HOSTS" ] && export PARAMS_MAX_HOSTS=20
+  [ -z "$WAYMORE_FALLBACK_MAX_HOSTS" ] && export WAYMORE_FALLBACK_MAX_HOSTS=20
+  [ -z "$HYPOTHESIS_MAX_PER_PATTERN" ] && export HYPOTHESIS_MAX_PER_PATTERN=20
+  [ -z "$SQLMAP_MAX_TARGETS" ] && export SQLMAP_MAX_TARGETS=20
+  [ -z "$SQLMAP_MAX_CONCURRENT" ] && export SQLMAP_MAX_CONCURRENT=4
 
   # ── Wordlists (relative to SCRIPT_DIR/data/wordlists/)
   local wl_base="${SCRIPT_DIR}/data/wordlists"
@@ -271,5 +287,5 @@ check_output() {
 
 # ─── SANITIZE TARGET NAME ───────────────────────────────────
 sanitize_target() {
-  echo "$1" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/^\*\.//g'
+  echo "$1" | sed 's/^\*\.//g' | sed 's/[^a-zA-Z0-9._-]/_/g'
 }

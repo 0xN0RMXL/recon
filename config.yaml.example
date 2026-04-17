@@ -2,6 +2,8 @@
 # RECON Framework — Configuration File
 # Copy to config.yaml and fill in your values.
 # NEVER commit config.yaml to version control.
+# SAFE TO TRACK: config.yaml.example contains no secrets.
+# DO NOT TRACK: config.yaml is your local runtime copy with keys.
 # ============================================================
 
 # ─── API KEYS ────────────────────────────────────────────────
@@ -87,6 +89,18 @@ performance:
   gau_threads: 200
   katana_depth: 5
   katana_concurrency: 50
+
+  # Sampling controls for large wildcard scopes (0 means no cap)
+  analyzer_max_hosts: 50
+  content_max_hosts: 20
+  vulns_max_hosts: 0
+  params_max_hosts: 20
+  waymore_fallback_max_hosts: 20
+  hypothesis_max_per_pattern: 20
+
+  # SQLMap controls (phase 09)
+  sqlmap_max_targets: 20
+  sqlmap_max_concurrent: 4
 
 # ─── WORDLISTS ───────────────────────────────────────────────
 wordlists:

@@ -6,6 +6,9 @@
 
 origin_ip_hunt() {
   local OUT="$WORKDIR/15_origins"
+  local ERR_LOG="$OUT/origins_errors.log"
+
+  : > "$ERR_LOG"
 
   log info "Phase 15: Origin IP hunting starting"
 
@@ -23,9 +26,9 @@ origin_ip_hunt() {
 
   log info "Running originiphunter..."
   cat "$WORKDIR/01_subdomains/all_subdomains.txt" | \
-    originiphunter > "$OUT/origin_ips.txt" 2>/dev/null
+    originiphunter > "$OUT/origin_ips.txt" 2>>"$ERR_LOG"
 
   check_output "$OUT/origin_ips.txt" "originiphunter"
-  log info "Origin IPs: $(wc -l < "$OUT/origin_ips.txt" 2>/dev/null | tr -d ' ')"
+  log info "Origin IPs: $(wc -l < "$OUT/origin_ips.txt" 2>>"$ERR_LOG" | tr -d ' ')"
   log success "Origin IP hunting phase complete"
 }

@@ -6,6 +6,9 @@
 
 cloud_enum() {
   local OUT="$WORKDIR/10_cloud"
+  local ERR_LOG="$OUT/cloud_errors.log"
+
+  : > "$ERR_LOG"
 
   log info "Phase 10: Cloud asset detection starting"
 
@@ -30,7 +33,7 @@ cloud_enum() {
     # Test public access
     local response
     response=$(curl -sk -o /dev/null -w "%{http_code}" \
-      "https://$bucket.s3.amazonaws.com/" 2>/dev/null)
+      "https://$bucket.s3.amazonaws.com/" 2>>"$ERR_LOG")
     if [[ "$response" =~ ^(200|301|403)$ ]]; then
       echo "$bucket.s3.amazonaws.com → HTTP $response" >> "$OUT/accessible_buckets.txt"
       log warn "Accessible S3 bucket found: $bucket (HTTP $response)"
@@ -40,7 +43,7 @@ cloud_enum() {
   # Check cloud leaks from URL categorization
   if [ -s "$WORKDIR/05_urls/categorized/cloud_leaks.txt" ]; then
     cat "$WORKDIR/05_urls/categorized/cloud_leaks.txt" >> "$OUT/buckets.txt"
-    sort -u "$OUT/buckets.txt" -o "$OUT/buckets.txt"
+    sort -u "$OUT/buckets.txt" -o "$OUT/buckets.txt" 2>>"$ERR_LOG"
   fi
 
   log success "Cloud asset detection complete"

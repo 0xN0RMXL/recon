@@ -7,6 +7,9 @@
 take_screenshots() {
   local IN="$WORKDIR/03_live_hosts/live.txt"
   local OUT="$WORKDIR/12_screenshots"
+  local ERR_LOG="$OUT/screenshots_errors.log"
+
+  : > "$ERR_LOG"
 
   if [ ! -s "$IN" ]; then
     log warn "No live hosts found. Skipping screenshots."
@@ -26,7 +29,7 @@ take_screenshots() {
     --db-path "$OUT/gowitness.db" \
     --threads 10 \
     --timeout 10 \
-    2>/dev/null
+    2>>"$ERR_LOG"
 
   log info "Screenshots saved to $OUT/"
   log success "Screenshot capture phase complete"

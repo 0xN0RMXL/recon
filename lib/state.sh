@@ -14,6 +14,128 @@ state_init() {
   fi
 }
 
+state_phase_checkpoint_file() {
+  local phase="$1"
+  echo "$WORKDIR/meta/.phase_${phase}.inprogress"
+}
+
+state_mark_running() {
+  local phase="$1"
+  local attempt="${2:-1}"
+  local state_file="$WORKDIR/meta/state.json"
+  local checkpoint_file
+  local ts
+
+  checkpoint_file=$(state_phase_checkpoint_file "$phase")
+  ts=$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S')
+
+  echo "running attempt=$attempt ts=$ts" > "$checkpoint_file"
+
+  if command -v jq &>/dev/null && [ -f "$state_file" ]; then
+    jq --arg p "$phase" --arg t "$ts" --argjson a "$attempt" \
+      '.[$p] = {"status":"running","ts":$t,"attempt":$a}' \
+      "$state_file" > "${state_file}.tmp" && \
+    mv "${state_file}.tmp" "$state_file"
+  fi
+}
+
+state_clear_running() {
+  local phase="$1"
+  local checkpoint_file
+  checkpoint_file=$(state_phase_checkpoint_file "$phase")
+  rm -f "$checkpoint_file" 2>/dev/null || true
+}
+
+state_phase_has_partial_artifact() {
+  local phase="$1"
+  local checkpoint_file
+  checkpoint_file=$(state_phase_checkpoint_file "$phase")
+  [ -f "$checkpoint_file" ]
+}
+
+state_primary_output_file() {
+  local phase="$1"
+  case "$phase" in
+    subdomains)   echo "$WORKDIR/01_subdomains/all_subdomains.txt" ;;
+    dns)          echo "$WORKDIR/02_dns/resolved.txt" ;;
+    probe)        echo "$WORKDIR/03_live_hosts/live.txt" ;;
+    ports)        echo "$WORKDIR/04_ports/naabu_ports.txt" ;;
+    urls)         echo "$WORKDIR/05_urls/all_urls.txt" ;;
+    content)      echo "$WORKDIR/06_content/ffuf_dirs.txt" ;;
+    js)           echo "$WORKDIR/07_js/js_urls.txt" ;;
+    params)       echo "$WORKDIR/08_params/all_params.txt" ;;
+    vulns)        echo "$WORKDIR/09_vulns/nuclei_all.txt" ;;
+    cloud)        echo "$WORKDIR/10_cloud/buckets.txt" ;;
+    secrets)      echo "$WORKDIR/11_secrets/regex_secrets.txt" ;;
+    screenshots)  echo "$WORKDIR/12_screenshots/gowitness.db" ;;
+    api)          echo "$WORKDIR/13_api/kiterunner_routes.txt" ;;
+    github)       echo "$WORKDIR/14_github/gitdorker_results.txt" ;;
+    origins)      echo "$WORKDIR/15_origins/origin_ips.txt" ;;
+    analyzer)     echo "$WORKDIR/intelligence/response_anomalies.txt" ;;
+    hypothesis)   echo "$WORKDIR/intelligence/hypotheses.txt" ;;
+    chaining)     echo "$WORKDIR/intelligence/bug_chains.txt" ;;
+    scoring)      echo "$WORKDIR/reports/prioritized_targets.json" ;;
+    decision)     echo "$WORKDIR/intelligence/decision_report.txt" ;;
+    reporting)    echo "$WORKDIR/reports/summary.json" ;;
+    *)            echo "" ;;
+  esac
+}
+
+state_phase_output_valid() {
+  local phase="$1"
+  local output_file
+
+  output_file=$(state_primary_output_file "$phase")
+  [ -z "$output_file" ] && return 0
+
+  case "$phase" in
+    subdomains)
+      [ -s "$output_file" ] || return 1
+      grep -Eq '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$' "$output_file" 2>/dev/null
+      ;;
+    dns)
+      [ -s "$output_file" ] || return 1
+      grep -Eq '([0-9]{1,3}\.){3}[0-9]{1,3}|[0-9a-fA-F:]{2,}:[0-9a-fA-F:]+' "$output_file" 2>/dev/null
+      ;;
+    probe|urls)
+      [ -s "$output_file" ] || return 1
+      grep -Eq '^https?://[^ ]+' "$output_file" 2>/dev/null
+      ;;
+    ports)
+      [ -s "$output_file" ] || return 1
+      grep -Eq '^[^ :]+:[0-9]{1,5}$' "$output_file" 2>/dev/null
+      ;;
+    decision)
+      [ -s "$output_file" ] || return 1
+      grep -Eq 'Priority Decision Report|PRIORITY' "$output_file" 2>/dev/null
+      ;;
+    chaining)
+      [ -s "$output_file" ] || return 1
+      grep -Eq 'Bug Chain Analysis|\[CHAIN\]' "$output_file" 2>/dev/null
+      ;;
+    scoring)
+      [ -s "$output_file" ] || return 1
+      if command -v jq &>/dev/null; then
+        jq -e 'type == "array"' "$output_file" >/dev/null 2>/dev/null
+      else
+        grep -Eq '^\[' "$output_file" 2>/dev/null
+      fi
+      ;;
+    reporting)
+      [ -s "$output_file" ] || return 1
+      if command -v jq &>/dev/null; then
+        jq -e '.target and .timestamp and .stats' "$output_file" >/dev/null 2>/dev/null
+      else
+        grep -Eq '"target"|"timestamp"|"stats"' "$output_file" 2>/dev/null
+      fi
+      ;;
+    *)
+      # Non-foundational phases can be informational and may legitimately be empty.
+      return 0
+      ;;
+  esac
+}
+
 # ─── MARK PHASE AS DONE ─────────────────────────────────────
 state_mark_done() {
   local phase="$1"
@@ -63,35 +185,13 @@ state_should_skip() {
   # Run if status is not "done"
   [ "$status" != "done" ] && return 1
 
-  # Check that the primary output file for this phase exists and is non-empty
-  local output_file=""
-  case "$phase" in
-    subdomains)   output_file="$WORKDIR/01_subdomains/all_subdomains.txt" ;;
-    dns)          output_file="$WORKDIR/02_dns/resolved.txt" ;;
-    probe)        output_file="$WORKDIR/03_live_hosts/live.txt" ;;
-    ports)        output_file="$WORKDIR/04_ports/naabu_ports.txt" ;;
-    urls)         output_file="$WORKDIR/05_urls/all_urls.txt" ;;
-    content)      output_file="$WORKDIR/06_content/ffuf_dirs.txt" ;;
-    js)           output_file="$WORKDIR/07_js/js_urls.txt" ;;
-    params)       output_file="$WORKDIR/08_params/all_params.txt" ;;
-    vulns)        output_file="$WORKDIR/09_vulns/nuclei_all.txt" ;;
-    cloud)        output_file="$WORKDIR/10_cloud/buckets.txt" ;;
-    secrets)      output_file="$WORKDIR/11_secrets/regex_secrets.txt" ;;
-    screenshots)  output_file="$WORKDIR/12_screenshots/gowitness.db" ;;
-    api)          output_file="$WORKDIR/13_api/kiterunner_routes.txt" ;;
-    github)       output_file="$WORKDIR/14_github/gitdorker_results.txt" ;;
-    origins)      output_file="$WORKDIR/15_origins/origin_ips.txt" ;;
-    analyzer)     output_file="$WORKDIR/intelligence/response_anomalies.txt" ;;
-    hypothesis)   output_file="$WORKDIR/intelligence/hypotheses.txt" ;;
-    chaining)     output_file="$WORKDIR/intelligence/bug_chains.txt" ;;
-    scoring)      output_file="$WORKDIR/reports/prioritized_targets.json" ;;
-    decision)     output_file="$WORKDIR/intelligence/decision_report.txt" ;;
-    reporting)    output_file="$WORKDIR/reports/summary.json" ;;
-    *)            return 1 ;;
-  esac
+  # If a partial artifact marker exists, force rerun.
+  if state_phase_has_partial_artifact "$phase"; then
+    return 1
+  fi
 
-  # If output file is missing or empty, run the phase
-  if [ -n "$output_file" ] && [ ! -s "$output_file" ]; then
+  # If output is missing or fails sanity checks, rerun.
+  if ! state_phase_output_valid "$phase"; then
     return 1
   fi
 

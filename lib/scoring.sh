@@ -7,6 +7,9 @@
 score_targets() {
   local IN="$WORKDIR/05_urls/all_urls.txt"
   local OUT="$WORKDIR/reports/prioritized_targets.json"
+  local ERR_LOG="$WORKDIR/reports/scoring_errors.log"
+
+  : > "$ERR_LOG"
 
   if [ ! -s "$IN" ]; then
     log warn "No URLs found. Skipping scoring."
@@ -53,14 +56,14 @@ score_targets() {
 
   # Sort by score descending
   if command -v jq &>/dev/null; then
-    jq 'sort_by(-.score)' "$OUT" > /tmp/sorted_targets_$$.json 2>/dev/null && \
+    jq 'sort_by(-.score)' "$OUT" > /tmp/sorted_targets_$$.json 2>>"$ERR_LOG" && \
       mv /tmp/sorted_targets_$$.json "$OUT"
   fi
 
   log info "Priority targets saved to $OUT"
   if command -v jq &>/dev/null; then
     log info "Top 10 targets:"
-    jq -r '.[:10] | .[] | "  Score: \(.score) | \(.url) | Tags: \(.tags | join(","))"' "$OUT" 2>/dev/null
+    jq -r '.[:10] | .[] | "  Score: \(.score) | \(.url) | Tags: \(.tags | join(","))"' "$OUT" 2>>"$ERR_LOG"
   fi
   log success "Priority scoring complete"
 }

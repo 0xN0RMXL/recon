@@ -72,6 +72,36 @@ else
   ((ERRORS++))
 fi
 
+# Test 7: running marker prevents skip
+state_mark_done "probe"
+mkdir -p "$WORKDIR/03_live_hosts"
+echo "https://example.com" > "$WORKDIR/03_live_hosts/live.txt"
+state_mark_running "probe" "1"
+if ! state_should_skip "probe"; then
+  echo "PASS: state_should_skip reruns when running marker exists"
+else
+  echo "FAIL: state_should_skip skipped phase with running marker"
+  ((ERRORS++))
+fi
+state_clear_running "probe"
+
+# Test 8: foundational output format validation
+echo "not_a_domain" > "$WORKDIR/01_subdomains/all_subdomains.txt"
+if ! state_phase_output_valid "subdomains"; then
+  echo "PASS: invalid subdomain artifact rejected"
+else
+  echo "FAIL: invalid subdomain artifact accepted"
+  ((ERRORS++))
+fi
+
+echo "api.example.com" > "$WORKDIR/01_subdomains/all_subdomains.txt"
+if state_phase_output_valid "subdomains"; then
+  echo "PASS: valid subdomain artifact accepted"
+else
+  echo "FAIL: valid subdomain artifact rejected"
+  ((ERRORS++))
+fi
+
 # Cleanup
 rm -rf "$WORKDIR" "$LOG_FILE"
 

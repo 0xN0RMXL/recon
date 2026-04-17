@@ -6,6 +6,9 @@
 
 subdomains_run() {
   local OUT="$WORKDIR/01_subdomains"
+  local ERR_LOG="$OUT/subdomains_errors.log"
+
+  : > "$ERR_LOG"
 
   log info "Phase 01: Subdomain enumeration starting for $TARGET"
 
@@ -15,35 +18,35 @@ subdomains_run() {
   if require_tool subfinder; then
     log info "Running subfinder..."
     subfinder -d "$TARGET" -all -recursive -silent \
-      -o "$OUT/passive/subfinder.txt" 2>/dev/null
+      -o "$OUT/passive/subfinder.txt" 2>>"$ERR_LOG"
     check_output "$OUT/passive/subfinder.txt" "subfinder"
   fi
 
   # assetfinder
   if require_tool assetfinder; then
     log info "Running assetfinder..."
-    assetfinder --subs-only "$TARGET" > "$OUT/passive/assetfinder.txt" 2>/dev/null
+    assetfinder --subs-only "$TARGET" > "$OUT/passive/assetfinder.txt" 2>>"$ERR_LOG"
     check_output "$OUT/passive/assetfinder.txt" "assetfinder"
   fi
 
   # amass (passive only, with config if available)
   if require_tool amass; then
     log info "Running amass (passive)..."
-    timeout 600 amass enum -passive -d "$TARGET" -o "$OUT/passive/amass.txt" 2>/dev/null
+    timeout 600 amass enum -passive -d "$TARGET" -o "$OUT/passive/amass.txt" 2>>"$ERR_LOG"
     check_output "$OUT/passive/amass.txt" "amass"
   fi
 
   # findomain
   if require_tool findomain; then
     log info "Running findomain..."
-    findomain -t "$TARGET" -u "$OUT/passive/findomain.txt" 2>/dev/null
+    findomain -t "$TARGET" -u "$OUT/passive/findomain.txt" 2>>"$ERR_LOG"
     check_output "$OUT/passive/findomain.txt" "findomain"
   fi
 
   # chaos (if API key set)
   if [ -n "$CHAOS_KEY" ] && require_tool chaos; then
     log info "Running chaos..."
-    chaos -d "$TARGET" -o "$OUT/passive/chaos.txt" -key "$CHAOS_KEY" 2>/dev/null
+    chaos -d "$TARGET" -o "$OUT/passive/chaos.txt" -key "$CHAOS_KEY" 2>>"$ERR_LOG"
     check_output "$OUT/passive/chaos.txt" "chaos"
   else
     [ -z "$CHAOS_KEY" ] && log info "Skipping chaos: no API key configured"
@@ -53,7 +56,7 @@ subdomains_run() {
   if [ -n "$GITHUB_TOKEN" ] && require_tool github-subdomains; then
     log info "Running github-subdomains..."
     github-subdomains -d "$TARGET" -t "$GITHUB_TOKEN" \
-      -o "$OUT/passive/github.txt" 2>/dev/null
+      -o "$OUT/passive/github.txt" 2>>"$ERR_LOG"
     check_output "$OUT/passive/github.txt" "github-subdomains"
   else
     [ -z "$GITHUB_TOKEN" ] && log info "Skipping github-subdomains: no GitHub token configured"
@@ -62,10 +65,10 @@ subdomains_run() {
   # crt.sh via curl + jq
   log info "Querying crt.sh..."
   curl -s "https://crt.sh/?q=%25.$TARGET&output=json" \
-    | jq -r '.[].name_value' 2>/dev/null \
+    | jq -r '.[].name_value' 2>>"$ERR_LOG" \
     | sed 's/\*\.//g' | tr ',' '\n' \
     | grep -oE "[A-Za-z0-9._-]+\.$TARGET" \
-    | sort -u > "$OUT/passive/crtsh.txt" 2>/dev/null
+    | sort -u > "$OUT/passive/crtsh.txt" 2>>"$ERR_LOG"
   check_output "$OUT/passive/crtsh.txt" "crt.sh"
 
   # SecurityTrails API (if key set)
@@ -73,7 +76,7 @@ subdomains_run() {
     log info "Querying SecurityTrails API..."
     curl -s "https://api.securitytrails.com/v1/domain/$TARGET/subdomains" \
       -H "apikey: $SECURITYTRAILS_KEY" \
-      | jq -r '.subdomains[]' 2>/dev/null \
+      | jq -r '.subdomains[]' 2>>"$ERR_LOG" \
       | sed "s/$/.$TARGET/" \
       > "$OUT/passive/securitytrails.txt"
     check_output "$OUT/passive/securitytrails.txt" "SecurityTrails"
@@ -86,7 +89,7 @@ subdomains_run() {
     log info "Querying VirusTotal API..."
     curl -s "https://www.virustotal.com/api/v3/domains/$TARGET/subdomains?limit=40" \
       -H "x-apikey: $VIRUSTOTAL_KEY" \
-      | jq -r '.data[].id' 2>/dev/null \
+      | jq -r '.data[].id' 2>>"$ERR_LOG" \
       > "$OUT/passive/virustotal.txt"
     check_output "$OUT/passive/virustotal.txt" "VirusTotal"
   else
@@ -98,7 +101,7 @@ subdomains_run() {
     log info "Querying AlienVault OTX API..."
     curl -s "https://otx.alienvault.com/api/v1/indicators/domain/$TARGET/passive_dns" \
       -H "X-OTX-API-KEY: $OTX_KEY" \
-      | jq -r '.passive_dns[].hostname' 2>/dev/null \
+      | jq -r '.passive_dns[].hostname' 2>>"$ERR_LOG" \
       > "$OUT/passive/otx.txt"
     check_output "$OUT/passive/otx.txt" "AlienVault OTX"
   else
@@ -110,7 +113,7 @@ subdomains_run() {
     log info "Querying URLScan.io API..."
     curl -s "https://urlscan.io/api/v1/search/?q=domain:$TARGET&size=200" \
       -H "API-Key: $URLSCAN_KEY" \
-      | jq -r '.results[].page.domain' 2>/dev/null \
+      | jq -r '.results[].page.domain' 2>>"$ERR_LOG" \
       > "$OUT/passive/urlscan.txt"
     check_output "$OUT/passive/urlscan.txt" "URLScan.io"
   else
@@ -121,13 +124,15 @@ subdomains_run() {
 
   # puredns bruteforce with resolvers
   if require_tool puredns; then
-    if [ -s "$WORDLIST_DNS_BEST" ] && [ -s "$RESOLVERS" ]; then
+    if ! command -v massdns &>/dev/null; then
+      log warn "Skipping puredns: massdns is missing (install.sh now auto-installs it)"
+    elif [ -s "$WORDLIST_DNS_BEST" ] && [ -s "$RESOLVERS" ]; then
       log info "Running puredns bruteforce..."
       puredns bruteforce \
         "$WORDLIST_DNS_BEST" \
         "$TARGET" \
         -r "$RESOLVERS" \
-        -w "$OUT/active/puredns.txt" 2>/dev/null
+        -w "$OUT/active/puredns.txt" 2>>"$ERR_LOG"
       check_output "$OUT/active/puredns.txt" "puredns"
     else
       log warn "Skipping puredns: wordlist or resolvers missing"
@@ -140,7 +145,7 @@ subdomains_run() {
       log info "Running dnsx bruteforce..."
       dnsx -silent -d "$TARGET" \
         -w "$WORDLIST_DNS_BRUTEFORCE" \
-        -o "$OUT/active/dnsx_brute.txt" 2>/dev/null
+        -o "$OUT/active/dnsx_brute.txt" 2>>"$ERR_LOG"
       check_output "$OUT/active/dnsx_brute.txt" "dnsx bruteforce"
     else
       log warn "Skipping dnsx bruteforce: wordlist missing"
@@ -155,13 +160,15 @@ subdomains_run() {
       ffuf -u "https://FUZZ.$TARGET" \
         -w "$WORDLIST_DNS_BRUTEFORCE" \
         -mc 200,301,302,307 \
-        -t 200 -silent \
+        -t 200 -s \
         -o "$OUT/fuzzing/ffuf_subdomains.json" \
-        -of json 2>/dev/null
+        -of json 2>>"$ERR_LOG"
 
       # Parse ffuf json to extract found subdomains
-      jq -r '.results[].host' "$OUT/fuzzing/ffuf_subdomains.json" 2>/dev/null \
-        > "$OUT/fuzzing/ffuf_subdomains.txt"
+      jq -r '.results[] | (.host // .url // empty)' "$OUT/fuzzing/ffuf_subdomains.json" 2>>"$ERR_LOG" \
+        | sed -E 's#^https?://##; s#/.*$##; s#:[0-9]+$##' \
+        | grep -E "\.${TARGET//./\\.}$" \
+        | sort -u > "$OUT/fuzzing/ffuf_subdomains.txt" || true
     else
       log warn "Skipping ffuf subdomain fuzzing: wordlist missing"
     fi
@@ -170,18 +177,24 @@ subdomains_run() {
   # ── MERGE & DEDUPLICATE ────────────────────────────────────
 
   log info "Merging and deduplicating all subdomains..."
-  cat "$OUT/passive/"*.txt "$OUT/active/"*.txt "$OUT/fuzzing/"*.txt 2>/dev/null \
+  cat "$OUT/passive/"*.txt "$OUT/active/"*.txt "$OUT/fuzzing/"*.txt 2>>"$ERR_LOG" \
     | grep -v "^$" | sort -u \
     | grep -E "^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$" \
-    | anew "$OUT/all_subdomains.txt" 2>/dev/null || {
+    | anew "$OUT/all_subdomains.txt" 2>>"$ERR_LOG" || {
       # Fallback if anew not available
-      cat "$OUT/passive/"*.txt "$OUT/active/"*.txt "$OUT/fuzzing/"*.txt 2>/dev/null \
+      cat "$OUT/passive/"*.txt "$OUT/active/"*.txt "$OUT/fuzzing/"*.txt 2>>"$ERR_LOG" \
         | grep -v "^$" | sort -u \
         | grep -E "^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$" \
         > "$OUT/all_subdomains.txt"
     }
 
   local count
-  count=$(wc -l < "$OUT/all_subdomains.txt" 2>/dev/null | tr -d ' ')
+  count=$(wc -l < "$OUT/all_subdomains.txt" 2>>"$ERR_LOG" | tr -d ' ')
+
+  if [ -z "$count" ] || [ "$count" -eq 0 ]; then
+    log error "Subdomain phase produced zero results. See $ERR_LOG"
+    return 1
+  fi
+
   log success "Total unique subdomains: ${count:-0}"
 }

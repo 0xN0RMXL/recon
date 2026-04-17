@@ -56,4 +56,15 @@ else
   ((ERRORS++))
 fi
 
+# Verify new sampling/concurrency controls are loaded
+for var_name in ANALYZER_MAX_HOSTS CONTENT_MAX_HOSTS VULNS_MAX_HOSTS PARAMS_MAX_HOSTS WAYMORE_FALLBACK_MAX_HOSTS HYPOTHESIS_MAX_PER_PATTERN SQLMAP_MAX_TARGETS SQLMAP_MAX_CONCURRENT; do
+  value="${!var_name}"
+  if [ -n "$value" ]; then
+    echo "PASS: $var_name set ($value)"
+  else
+    echo "FAIL: $var_name empty"
+    ((ERRORS++))
+  fi
+done
+
 exit $ERRORS

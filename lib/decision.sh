@@ -6,6 +6,9 @@
 
 decision_engine() {
   local OUT="$WORKDIR/intelligence/decision_report.txt"
+  local ERR_LOG="$WORKDIR/intelligence/decision_errors.log"
+
+  : > "$ERR_LOG"
 
   log info "Intelligence: Priority decision engine starting"
 
@@ -23,7 +26,7 @@ decision_engine() {
     [ -s "$WORKDIR/05_urls/categorized/admin_panels.txt" ] && \
       echo "[HIGH PRIORITY] Admin panels found → Test auth bypass, default credentials"
 
-    grep -q "graphql" "$WORKDIR/05_urls/all_urls.txt" 2>/dev/null && \
+    grep -q "graphql" "$WORKDIR/05_urls/all_urls.txt" 2>>"$ERR_LOG" && \
       echo "[HIGH PRIORITY] GraphQL detected → Test introspection, depth attacks"
 
     [ -s "$WORKDIR/07_js/extracted_secrets.txt" ] && \

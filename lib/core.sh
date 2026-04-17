@@ -100,21 +100,39 @@ run_phase() {
   local PHASE_START
   PHASE_START=$(date +%s)
 
-  # Run with retry (3 attempts, 10s sleep between)
+  local max_attempts retry_sleep
+  max_attempts="${PHASE_RETRY_COUNT:-3}"
+  retry_sleep="${PHASE_RETRY_SLEEP:-10}"
+
+  [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=3
+  [[ "$retry_sleep" =~ ^[0-9]+$ ]] || retry_sleep=10
+  [ "$max_attempts" -lt 1 ] && max_attempts=1
+
+  # Run with retry (defaults: 3 attempts, 10s sleep between)
   local attempt=1
-  while [ $attempt -le 3 ]; do
+  local phase_succeeded=false
+  while [ "$attempt" -le "$max_attempts" ]; do
+    state_mark_running "$PHASE_NAME" "$attempt"
+
     if $PHASE_FUNC; then
-      break
+      if state_phase_output_valid "$PHASE_NAME"; then
+        phase_succeeded=true
+        break
+      fi
+      log warn "Phase $PHASE_NAME produced invalid or incomplete output on attempt $attempt"
     fi
+
+    state_clear_running "$PHASE_NAME"
     log warn "Phase $PHASE_NAME attempt $attempt failed. Retrying..."
     ((attempt++))
-    sleep 10
+    [ "$retry_sleep" -gt 0 ] && sleep "$retry_sleep"
   done
 
-  if [ $attempt -gt 3 ]; then
-    state_mark_failed "$PHASE_NAME" "Failed after 3 attempts"
+  if [ "$phase_succeeded" != "true" ]; then
+    state_mark_failed "$PHASE_NAME" "Failed after ${max_attempts} attempts"
+    state_clear_running "$PHASE_NAME"
     export CURRENT_PHASE=""
-    log error "Phase $PHASE_NAME failed after 3 attempts. Skipping."
+    log error "Phase $PHASE_NAME failed after ${max_attempts} attempts. Skipping."
     notify "❌ Phase $PHASE_NAME FAILED on $TARGET"
     return 1
   fi
@@ -123,6 +141,7 @@ run_phase() {
   PHASE_END=$(date +%s)
   local ELAPSED=$((PHASE_END - PHASE_START))
 
+  state_clear_running "$PHASE_NAME"
   state_mark_done "$PHASE_NAME"
   export CURRENT_PHASE=""
   log success "Phase $PHASE_NAME completed in ${ELAPSED}s"

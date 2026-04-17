@@ -7,6 +7,11 @@
 analyze_responses() {
   local IN="$WORKDIR/03_live_hosts/live.txt"
   local OUT="$WORKDIR/intelligence/response_anomalies.txt"
+  local ERR_LOG="$WORKDIR/intelligence/analyzer_errors.log"
+  local ANALYZER_IN="$IN"
+  local tmp_analyzer_in=""
+
+  : > "$ERR_LOG"
 
   if [ ! -s "$IN" ]; then
     log warn "No live hosts found. Skipping response analysis."
@@ -16,6 +21,18 @@ analyze_responses() {
 
   log info "Intelligence: Response anomaly analysis starting"
 
+  local total_hosts sampled_hosts
+  total_hosts=$(wc -l < "$IN" 2>>"$ERR_LOG" | tr -d ' ')
+  total_hosts="${total_hosts:-0}"
+
+  if [ "${ANALYZER_MAX_HOSTS:-50}" -gt 0 ] && [ "$total_hosts" -gt "${ANALYZER_MAX_HOSTS:-50}" ]; then
+    tmp_analyzer_in="/tmp/recon_analyzer_hosts_$$.txt"
+    head -n "$ANALYZER_MAX_HOSTS" "$IN" > "$tmp_analyzer_in"
+    ANALYZER_IN="$tmp_analyzer_in"
+    sampled_hosts=$(wc -l < "$ANALYZER_IN" 2>>"$ERR_LOG" | tr -d ' ')
+    log warn "Analyzer sampling enabled: $sampled_hosts/$total_hosts live hosts"
+  fi
+
   {
     echo "# Response Anomaly Analysis for $TARGET"
     echo "# Generated: $(date)"
@@ -23,7 +40,7 @@ analyze_responses() {
 
     while IFS= read -r url; do
       local response
-      response=$(curl -sk -i --max-time 10 "$url" 2>/dev/null)
+      response=$(curl -sk -i --max-time 10 "$url" 2>>"$ERR_LOG")
 
       [ -z "$response" ] && continue
 
@@ -51,9 +68,11 @@ analyze_responses() {
       echo "$response" | grep -qi 'eyJ[a-zA-Z0-9_-]\{10,\}' && \
         echo "[JWT_EXPOSED] $url → JWT token visible in response"
 
-    done < <(head -50 "$IN")  # Limit to first 50 to avoid timeout
+    done < "$ANALYZER_IN"
 
   } > "$OUT"
+
+  [ -n "$tmp_analyzer_in" ] && rm -f "$tmp_analyzer_in"
 
   check_output "$OUT" "response analyzer"
   log success "Response anomaly analysis complete"

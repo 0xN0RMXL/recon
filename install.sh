@@ -249,7 +249,7 @@ detect_os() {
 install_system_packages() {
   info "Installing system packages..."
   
-  local packages="git curl wget jq python3 python3-pip python3-venv unzip bc parallel nmap masscan chromium-browser libpcap-dev"
+  local packages="git curl wget jq python3 python3-pip python3-venv unzip bc parallel nmap masscan chromium-browser libpcap-dev build-essential make gcc libldns-dev"
   
   if command -v apt-get &>/dev/null; then
     sudo apt-get update -qq 2>/dev/null
@@ -259,6 +259,45 @@ install_system_packages() {
   else
     error "apt-get not found. Install packages manually: $packages"
   fi
+}
+
+install_massdns() {
+  if command -v massdns &>/dev/null; then
+    success "massdns already installed"
+    return 0
+  fi
+
+  info "Installing massdns from source..."
+
+  local build_dir="/tmp/recon_massdns"
+  rm -rf "$build_dir"
+
+  if ! git clone -q https://github.com/blechschmidt/massdns "$build_dir" 2>/dev/null; then
+    error "Failed to clone massdns source"
+    return 1
+  fi
+
+  if ! (cd "$build_dir" && make -s) 2>/dev/null; then
+    rm -rf "$build_dir"
+    error "Failed to build massdns"
+    return 1
+  fi
+
+  if ! sudo install -m 0755 "$build_dir/bin/massdns" /usr/local/bin/massdns 2>/dev/null; then
+    rm -rf "$build_dir"
+    error "Failed to install massdns binary to /usr/local/bin"
+    return 1
+  fi
+
+  rm -rf "$build_dir"
+
+  if command -v massdns &>/dev/null; then
+    success "massdns installed"
+    return 0
+  fi
+
+  error "massdns install completed but command is still not available"
+  return 1
 }
 
 # ─── 2. INSTALL / VERIFY GO ─────────────────────────────────
@@ -845,6 +884,7 @@ main() {
   detect_os
 
   install_system_packages
+  install_massdns
   install_go
   install_go_tools
   install_python_tools

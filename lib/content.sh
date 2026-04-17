@@ -7,6 +7,11 @@
 content_discovery() {
   local IN="$WORKDIR/03_live_hosts/live.txt"
   local OUT="$WORKDIR/06_content"
+  local ERR_LOG="$OUT/content_errors.log"
+  local CONTENT_IN="$IN"
+  local tmp_content_in=""
+
+  : > "$ERR_LOG"
 
   if [ ! -s "$IN" ]; then
     log warn "No live hosts found. Skipping content discovery."
@@ -15,6 +20,18 @@ content_discovery() {
 
   log info "Phase 06: Content discovery starting"
 
+  local total_hosts sampled_hosts
+  total_hosts=$(wc -l < "$IN" 2>>"$ERR_LOG" | tr -d ' ')
+  total_hosts="${total_hosts:-0}"
+
+  if [ "${CONTENT_MAX_HOSTS:-20}" -gt 0 ] && [ "$total_hosts" -gt "${CONTENT_MAX_HOSTS:-20}" ]; then
+    tmp_content_in="/tmp/recon_content_hosts_$$.txt"
+    head -n "$CONTENT_MAX_HOSTS" "$IN" > "$tmp_content_in"
+    CONTENT_IN="$tmp_content_in"
+    sampled_hosts=$(wc -l < "$CONTENT_IN" 2>>"$ERR_LOG" | tr -d ' ')
+    log warn "Content sampling enabled: $sampled_hosts/$total_hosts live hosts"
+  fi
+
   local PROXY_ARG=""
   [ "$BURP_ENABLED" = "true" ] && PROXY_ARG="-x $BURP_PROXY"
 
@@ -22,8 +39,9 @@ content_discovery() {
   if require_tool ffuf && [ -s "$WORDLIST_WEB_COMMON" ]; then
     log info "Running ffuf directory fuzzing..."
     while IFS= read -r url; do
+      [ -z "$url" ] && continue
       local hash
-      hash=$(echo "$url" | md5sum 2>/dev/null | cut -c1-8 || echo "$(date +%s)")
+      hash=$(echo "$url" | md5sum 2>>"$ERR_LOG" | cut -c1-8 || echo "$(date +%s)")
       ffuf -u "${url}/FUZZ" \
         -w "$WORDLIST_WEB_COMMON" \
         -t "$FFUF_THREADS" \
@@ -31,37 +49,39 @@ content_discovery() {
         -ac \
         $PROXY_ARG \
         -o "/tmp/ffuf_${hash}.json" \
-        -of json -s 2>/dev/null
-    done < "$IN"
+        -of json -s 2>>"$ERR_LOG" || true
+    done < "$CONTENT_IN"
 
     # Merge ffuf results
     find /tmp/ -name "ffuf_*.json" -exec jq -r '.results[].url' {} \; \
-      2>/dev/null | sort -u > "$OUT/ffuf_dirs.txt"
-    find /tmp/ -name "ffuf_*.json" -exec cat {} \; 2>/dev/null > "$OUT/ffuf_dirs.json"
+      2>>"$ERR_LOG" | sort -u > "$OUT/ffuf_dirs.txt"
+    find /tmp/ -name "ffuf_*.json" -exec cat {} \; 2>>"$ERR_LOG" > "$OUT/ffuf_dirs.json"
     rm -f /tmp/ffuf_*.json
 
     # Also run full extension sweep (from methodology)
     if [ -s "$WORDLIST_WEB_RAFT_LARGE_FILES" ]; then
-      log info "Running ffuf extension sweep on top hosts..."
-      head -20 "$IN" | while IFS= read -r url; do
+      log info "Running ffuf extension sweep..."
+      while IFS= read -r url; do
+        [ -z "$url" ] && continue
         ffuf -u "${url}/FUZZ" \
           -w "$WORDLIST_WEB_RAFT_LARGE_FILES" \
           -e ".php,.html,.asp,.aspx,.js,.json,.xml,.config,.bak,.old,.backup,.zip,.rar" \
           -t 200 -mc 200,301,302,401,403 -ac -s \
           $PROXY_ARG \
-          2>/dev/null >> "$OUT/ffuf_dirs.txt"
-      done
+          2>>"$ERR_LOG" >> "$OUT/ffuf_dirs.txt"
+      done < "$CONTENT_IN"
     fi
 
     # ── 403 bypass attempts (from methodology) ──
-    if grep -q "403" "$WORKDIR/03_live_hosts/live_detailed.txt" 2>/dev/null; then
+    if grep -q "403" "$WORKDIR/03_live_hosts/live_detailed.txt" 2>>"$ERR_LOG"; then
       log info "Attempting 403 bypass..."
       grep " 403 " "$WORKDIR/03_live_hosts/live_detailed.txt" | \
-        grep -oE "https?://[^ ]+" | head -20 | \
+        grep -oE "https?://[^ ]+" | \
+        { if [ "${CONTENT_MAX_HOSTS:-20}" -gt 0 ]; then head -n "$CONTENT_MAX_HOSTS"; else cat; fi; } | \
         while IFS= read -r url; do
           ffuf -u "$url" \
             -w "$DATA_DIR/wordlists/web/403-bypass-headers.txt" \
-            -H "FUZZ" -mc 200,301,302 -s 2>/dev/null >> "$OUT/ffuf_dirs.txt"
+            -H "FUZZ" -mc 200,301,302 -s 2>>"$ERR_LOG" >> "$OUT/ffuf_dirs.txt"
         done
     fi
   fi
@@ -69,26 +89,28 @@ content_discovery() {
   # ── feroxbuster ──
   if require_tool feroxbuster && [ -s "$WORDLIST_WEB_RAFT_LARGE_DIRS" ]; then
     log info "Running feroxbuster..."
-    head -10 "$IN" | while IFS= read -r url; do
+    while IFS= read -r url; do
+      [ -z "$url" ] && continue
       feroxbuster -u "$url" \
         -w "$WORDLIST_WEB_RAFT_LARGE_DIRS" \
         -t 300 -k -d 3 -e \
         -x "php,html,json,js,log,txt,bak,old,zip,tar,gz" \
         --quiet \
-        2>/dev/null >> "$OUT/feroxbuster.txt"
-    done
+        2>>"$ERR_LOG" >> "$OUT/feroxbuster.txt"
+    done < "$CONTENT_IN"
     check_output "$OUT/feroxbuster.txt" "feroxbuster"
   fi
 
   # ── gobuster ──
   if require_tool gobuster && [ -s "$WORDLIST_WEB_COMMON" ]; then
     log info "Running gobuster..."
-    head -10 "$IN" | while IFS= read -r url; do
+    while IFS= read -r url; do
+      [ -z "$url" ] && continue
       gobuster dir -u "$url" \
         -w "$WORDLIST_WEB_COMMON" \
         -k -q \
-        2>/dev/null >> "$OUT/gobuster.txt"
-    done
+        2>>"$ERR_LOG" >> "$OUT/gobuster.txt"
+    done < "$CONTENT_IN"
     check_output "$OUT/gobuster.txt" "gobuster"
   fi
 
@@ -98,7 +120,8 @@ content_discovery() {
     local dirsearch_cmd="dirsearch"
     [ -f "$HOME/tools/dirsearch/dirsearch.py" ] && dirsearch_cmd="python3 $HOME/tools/dirsearch/dirsearch.py"
 
-    head -10 "$IN" | while IFS= read -r url; do
+    while IFS= read -r url; do
+      [ -z "$url" ] && continue
       $dirsearch_cmd \
         -u "$url" \
         -i 200,204,301,302,307,308,401,403 \
@@ -108,8 +131,8 @@ content_discovery() {
         -t 80 \
         --random-agent \
         -o "$OUT/dirsearch.txt" -q \
-        2>/dev/null
-    done
+        2>>"$ERR_LOG"
+      done < "$CONTENT_IN"
     check_output "$OUT/dirsearch.txt" "dirsearch"
   fi
 
@@ -120,7 +143,7 @@ content_discovery() {
       -w "$WORDLIST_DNS_BRUTEFORCE" \
       -H "Host: FUZZ.$TARGET" \
       -mc 200,301,302,307 \
-      -t 200 -s 2>/dev/null \
+      -t 200 -s 2>>"$ERR_LOG" \
       | sort -u > "$OUT/vhosts.txt"
     check_output "$OUT/vhosts.txt" "vhost enum"
   fi
@@ -128,16 +151,19 @@ content_discovery() {
   # ── bfac backup file checker ──
   if [ -f "$HOME/tools/bfac/bfac.py" ]; then
     log info "Running bfac backup file checker..."
-    head -20 "$IN" | while IFS= read -r url; do
+    while IFS= read -r url; do
+      [ -z "$url" ] && continue
       python3 "$HOME/tools/bfac/bfac.py" \
         --url "$url" \
         --detection-technique all \
         --level 3 \
         --exclude-status-codes 404,500 \
-        2>/dev/null >> "$OUT/backup_files.txt"
-    done
+        2>>"$ERR_LOG" >> "$OUT/backup_files.txt"
+    done < "$CONTENT_IN"
     check_output "$OUT/backup_files.txt" "bfac"
   fi
+
+  [ -n "$tmp_content_in" ] && rm -f "$tmp_content_in"
 
   log success "Content discovery phase complete"
 }

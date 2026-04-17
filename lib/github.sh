@@ -6,6 +6,9 @@
 
 github_dorking() {
   local OUT="$WORKDIR/14_github"
+  local ERR_LOG="$OUT/github_errors.log"
+
+  : > "$ERR_LOG"
 
   log info "Phase 14: GitHub dorking starting"
 
@@ -38,7 +41,7 @@ github_dorking() {
     -q "$TARGET" \
     -d "$DATA_DIR/dorks/github_dorks.txt" \
     -o "$OUT/gitdorker_results.txt" \
-    2>/dev/null
+    2>>"$ERR_LOG"
 
   rm -f "$token_file"
   check_output "$OUT/gitdorker_results.txt" "GitDorker"

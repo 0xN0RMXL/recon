@@ -5,6 +5,10 @@
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ACTUAL_USER="${SUDO_USER:-$(whoami)}"
+ACTUAL_HOME=$(getent passwd "$ACTUAL_USER" 2>/dev/null | cut -d: -f6)
+[ -z "$ACTUAL_HOME" ] && ACTUAL_HOME="$HOME"
+TOOLS_DIR="$ACTUAL_HOME/tools"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -70,6 +74,66 @@ check_file_min_lines() {
   fi
 }
 
+check_runtime_command() {
+  local name="$1"
+  local cmd="$2"
+  local expected_pattern="$3"
+  shift 3
+
+  if ! command -v "$cmd" &>/dev/null; then
+    printf "${CYAN}║${RESET}  %-16s ${RED}❌${RESET}  %-34s ${CYAN}║${RESET}\n" "$name" "runtime skipped (missing)"
+    ((FAIL++))
+    return
+  fi
+
+  local output
+  output=$("$cmd" "$@" 2>&1 | head -20 || true)
+
+  if echo "$output" | grep -qiE "$expected_pattern"; then
+    printf "${CYAN}║${RESET}  %-16s ${GREEN}✅${RESET}  %-34s ${CYAN}║${RESET}\n" "$name" "runtime ok"
+    ((PASS++))
+  else
+    printf "${CYAN}║${RESET}  %-16s ${RED}❌${RESET}  %-34s ${CYAN}║${RESET}\n" "$name" "runtime check failed"
+    ((FAIL++))
+  fi
+}
+
+check_massdns_puredns_interop() {
+  local name="puredns+massdns"
+  local resolver_file="$SCRIPT_DIR/data/resolvers/resolvers.txt"
+
+  if ! command -v puredns &>/dev/null || ! command -v massdns &>/dev/null; then
+    printf "${CYAN}║${RESET}  %-16s ${RED}❌${RESET}  %-34s ${CYAN}║${RESET}\n" "$name" "missing one/both tools"
+    ((FAIL++))
+    return
+  fi
+
+  if [ ! -s "$resolver_file" ]; then
+    printf "${CYAN}║${RESET}  %-16s ${RED}❌${RESET}  %-34s ${CYAN}║${RESET}\n" "$name" "resolvers missing"
+    ((FAIL++))
+    return
+  fi
+
+  local tmp_out="/tmp/recon_doctor_puredns_$$.txt"
+  local output
+  output=$(puredns bruteforce /dev/null example.invalid -r "$resolver_file" -w "$tmp_out" 2>&1 || true)
+  rm -f "$tmp_out"
+
+  if echo "$output" | grep -qiE 'massdns.+not found|unable to execute massdns|exec: "massdns"'; then
+    printf "${CYAN}║${RESET}  %-16s ${RED}❌${RESET}  %-34s ${CYAN}║${RESET}\n" "$name" "interop failed"
+    ((FAIL++))
+    return
+  fi
+
+  if echo "$output" | grep -qiE 'wordlist|usage|no such file|empty'; then
+    printf "${CYAN}║${RESET}  %-16s ${GREEN}✅${RESET}  %-34s ${CYAN}║${RESET}\n" "$name" "interop viable"
+    ((PASS++))
+  else
+    printf "${CYAN}║${RESET}  %-16s ${YELLOW}⚠${RESET}  %-34s ${CYAN}║${RESET}\n" "$name" "interop uncertain"
+    ((WARN++))
+  fi
+}
+
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════════╗${RESET}"
 echo -e "${CYAN}║${RESET}${BOLD}          RECON — Environment Health Check            ${RESET}${CYAN}║${RESET}"
@@ -91,6 +155,7 @@ check_tool "gau"
 check_tool "hakrawler"
 check_tool "hakrevdns"
 check_tool "puredns"
+check_tool "massdns"
 check_tool "ffuf"
 check_tool "gobuster"
 check_tool "amass"
@@ -115,9 +180,9 @@ check_tool "trufflehog"
 echo -e "${CYAN}╠══════════════════════════════════════════════════════╣${RESET}"
 
 # ── Cloned Tools
-check_file "gitdorker" "$HOME/tools/GitDorker/GitDorker.py"
-check_file "bfac" "$HOME/tools/bfac"
-check_file "sqlmap" "$HOME/tools/sqlmap/sqlmap.py"
+check_file "gitdorker" "$TOOLS_DIR/GitDorker/GitDorker.py"
+check_file "bfac" "$TOOLS_DIR/bfac"
+check_file "sqlmap" "$TOOLS_DIR/sqlmap/sqlmap.py"
 
 echo -e "${CYAN}╠══════════════════════════════════════════════════════╣${RESET}"
 
@@ -133,10 +198,19 @@ check_file_min_lines "web_params_wl" "$SCRIPT_DIR/data/wordlists/web/burp-parame
 check_file_min_lines "resolvers.txt" "$SCRIPT_DIR/data/resolvers/resolvers.txt" 50
 check_file_min_lines "github_dorks" "$SCRIPT_DIR/data/dorks/github_dorks.txt" 5
 
+echo -e "${CYAN}╠══════════════════════════════════════════════════════╣${RESET}"
+
+# ── Runtime Readiness (critical path) ──
+check_runtime_command "naabu_runtime" "naabu" 'usage|rate|port' '-h'
+check_runtime_command "waymore_runtime" "waymore" 'usage|commoncrawl|providers' '-h'
+check_runtime_command "puredns_runtime" "puredns" 'usage|bruteforce|resolve' '--help'
+check_runtime_command "massdns_runtime" "massdns" 'usage|massdns|resolver' '-h'
+check_massdns_puredns_interop
+
 echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${RESET}"
 
 echo ""
-echo -e "Results: ${GREEN}$PASS passed${RESET}, ${RED}$FAIL failed${RESET}"
+echo -e "Results: ${GREEN}$PASS passed${RESET}, ${RED}$FAIL failed${RESET}, ${YELLOW}$WARN warnings${RESET}"
 echo ""
 
 if [ "$FAIL" -gt 0 ]; then

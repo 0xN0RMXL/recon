@@ -4,8 +4,16 @@
 # Reporting Engine — JSON + Markdown + HTML Summary Reports
 # ============================================================
 
+reporting_error_log() {
+  echo "$WORKDIR/reports/reporting_errors.log"
+}
+
 generate_report() {
   local REPORTS="$WORKDIR/reports"
+  local ERR_LOG
+  ERR_LOG=$(reporting_error_log)
+
+  : > "$ERR_LOG"
 
   log info "Generating reports..."
 
@@ -31,16 +39,19 @@ generate_report() {
 }
 
 _generate_json_report() {
+  local ERR_LOG
+  ERR_LOG=$(reporting_error_log)
+
   local subs live urls js params nuclei_crit nuclei_high secrets takeovers
-  subs=$(wc -l < "$WORKDIR/01_subdomains/all_subdomains.txt" 2>/dev/null || echo 0)
-  live=$(wc -l < "$WORKDIR/03_live_hosts/live.txt" 2>/dev/null || echo 0)
-  urls=$(wc -l < "$WORKDIR/05_urls/all_urls.txt" 2>/dev/null || echo 0)
-  js=$(wc -l < "$WORKDIR/07_js/js_urls.txt" 2>/dev/null || echo 0)
-  params=$(wc -l < "$WORKDIR/08_params/all_params.txt" 2>/dev/null || echo 0)
-  nuclei_crit=$(wc -l < "$WORKDIR/09_vulns/nuclei_critical.txt" 2>/dev/null || echo 0)
-  nuclei_high=$(wc -l < "$WORKDIR/09_vulns/nuclei_high.txt" 2>/dev/null || echo 0)
-  secrets=$(wc -l < "$WORKDIR/11_secrets/regex_secrets.txt" 2>/dev/null || echo 0)
-  takeovers=$(wc -l < "$WORKDIR/09_vulns/takeovers_nuclei.txt" 2>/dev/null || echo 0)
+  subs=$(wc -l < "$WORKDIR/01_subdomains/all_subdomains.txt" 2>>"$ERR_LOG" || echo 0)
+  live=$(wc -l < "$WORKDIR/03_live_hosts/live.txt" 2>>"$ERR_LOG" || echo 0)
+  urls=$(wc -l < "$WORKDIR/05_urls/all_urls.txt" 2>>"$ERR_LOG" || echo 0)
+  js=$(wc -l < "$WORKDIR/07_js/js_urls.txt" 2>>"$ERR_LOG" || echo 0)
+  params=$(wc -l < "$WORKDIR/08_params/all_params.txt" 2>>"$ERR_LOG" || echo 0)
+  nuclei_crit=$(wc -l < "$WORKDIR/09_vulns/nuclei_critical.txt" 2>>"$ERR_LOG" || echo 0)
+  nuclei_high=$(wc -l < "$WORKDIR/09_vulns/nuclei_high.txt" 2>>"$ERR_LOG" || echo 0)
+  secrets=$(wc -l < "$WORKDIR/11_secrets/regex_secrets.txt" 2>>"$ERR_LOG" || echo 0)
+  takeovers=$(wc -l < "$WORKDIR/09_vulns/takeovers_nuclei.txt" 2>>"$ERR_LOG" || echo 0)
 
   # Trim whitespace
   subs=$(echo "$subs" | tr -d ' ')
@@ -56,7 +67,7 @@ _generate_json_report() {
   if command -v jq &>/dev/null; then
     jq -n \
       --arg target "$TARGET" \
-      --arg ts "$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S')" \
+      --arg ts "$(date -Iseconds 2>>"$ERR_LOG" || date '+%Y-%m-%dT%H:%M:%S')" \
       --arg subs "$subs" \
       --arg live "$live" \
       --arg urls "$urls" \
@@ -105,20 +116,23 @@ EOF
 }
 
 _generate_markdown_report() {
+  local ERR_LOG
+  ERR_LOG=$(reporting_error_log)
+
   local subs live urls js params nuclei_crit nuclei_high secrets takeovers
-  subs=$(wc -l < "$WORKDIR/01_subdomains/all_subdomains.txt" 2>/dev/null || echo 0)
-  live=$(wc -l < "$WORKDIR/03_live_hosts/live.txt" 2>/dev/null || echo 0)
-  urls=$(wc -l < "$WORKDIR/05_urls/all_urls.txt" 2>/dev/null || echo 0)
-  js=$(wc -l < "$WORKDIR/07_js/js_urls.txt" 2>/dev/null || echo 0)
-  params=$(wc -l < "$WORKDIR/08_params/all_params.txt" 2>/dev/null || echo 0)
-  nuclei_crit=$(wc -l < "$WORKDIR/09_vulns/nuclei_critical.txt" 2>/dev/null || echo 0)
-  nuclei_high=$(wc -l < "$WORKDIR/09_vulns/nuclei_high.txt" 2>/dev/null || echo 0)
-  secrets=$(wc -l < "$WORKDIR/11_secrets/regex_secrets.txt" 2>/dev/null || echo 0)
-  takeovers=$(wc -l < "$WORKDIR/09_vulns/takeovers_nuclei.txt" 2>/dev/null || echo 0)
+  subs=$(wc -l < "$WORKDIR/01_subdomains/all_subdomains.txt" 2>>"$ERR_LOG" || echo 0)
+  live=$(wc -l < "$WORKDIR/03_live_hosts/live.txt" 2>>"$ERR_LOG" || echo 0)
+  urls=$(wc -l < "$WORKDIR/05_urls/all_urls.txt" 2>>"$ERR_LOG" || echo 0)
+  js=$(wc -l < "$WORKDIR/07_js/js_urls.txt" 2>>"$ERR_LOG" || echo 0)
+  params=$(wc -l < "$WORKDIR/08_params/all_params.txt" 2>>"$ERR_LOG" || echo 0)
+  nuclei_crit=$(wc -l < "$WORKDIR/09_vulns/nuclei_critical.txt" 2>>"$ERR_LOG" || echo 0)
+  nuclei_high=$(wc -l < "$WORKDIR/09_vulns/nuclei_high.txt" 2>>"$ERR_LOG" || echo 0)
+  secrets=$(wc -l < "$WORKDIR/11_secrets/regex_secrets.txt" 2>>"$ERR_LOG" || echo 0)
+  takeovers=$(wc -l < "$WORKDIR/09_vulns/takeovers_nuclei.txt" 2>>"$ERR_LOG" || echo 0)
 
   {
     echo "# Recon Report: $TARGET"
-    echo "**Date**: $(date -Iseconds 2>/dev/null || date)"
+    echo "**Date**: $(date -Iseconds 2>>"$ERR_LOG" || date)"
     echo ""
     echo "## Executive Summary"
     echo "| Metric | Count |"
@@ -213,16 +227,19 @@ _generate_markdown_report() {
 }
 
 _generate_html_report() {
+  local ERR_LOG
+  ERR_LOG=$(reporting_error_log)
+
   local subs live urls js params nuclei_crit nuclei_high secrets takeovers
-  subs=$(wc -l < "$WORKDIR/01_subdomains/all_subdomains.txt" 2>/dev/null || echo 0)
-  live=$(wc -l < "$WORKDIR/03_live_hosts/live.txt" 2>/dev/null || echo 0)
-  urls=$(wc -l < "$WORKDIR/05_urls/all_urls.txt" 2>/dev/null || echo 0)
-  js=$(wc -l < "$WORKDIR/07_js/js_urls.txt" 2>/dev/null || echo 0)
-  params=$(wc -l < "$WORKDIR/08_params/all_params.txt" 2>/dev/null || echo 0)
-  nuclei_crit=$(wc -l < "$WORKDIR/09_vulns/nuclei_critical.txt" 2>/dev/null || echo 0)
-  nuclei_high=$(wc -l < "$WORKDIR/09_vulns/nuclei_high.txt" 2>/dev/null || echo 0)
-  secrets=$(wc -l < "$WORKDIR/11_secrets/regex_secrets.txt" 2>/dev/null || echo 0)
-  takeovers=$(wc -l < "$WORKDIR/09_vulns/takeovers_nuclei.txt" 2>/dev/null || echo 0)
+  subs=$(wc -l < "$WORKDIR/01_subdomains/all_subdomains.txt" 2>>"$ERR_LOG" || echo 0)
+  live=$(wc -l < "$WORKDIR/03_live_hosts/live.txt" 2>>"$ERR_LOG" || echo 0)
+  urls=$(wc -l < "$WORKDIR/05_urls/all_urls.txt" 2>>"$ERR_LOG" || echo 0)
+  js=$(wc -l < "$WORKDIR/07_js/js_urls.txt" 2>>"$ERR_LOG" || echo 0)
+  params=$(wc -l < "$WORKDIR/08_params/all_params.txt" 2>>"$ERR_LOG" || echo 0)
+  nuclei_crit=$(wc -l < "$WORKDIR/09_vulns/nuclei_critical.txt" 2>>"$ERR_LOG" || echo 0)
+  nuclei_high=$(wc -l < "$WORKDIR/09_vulns/nuclei_high.txt" 2>>"$ERR_LOG" || echo 0)
+  secrets=$(wc -l < "$WORKDIR/11_secrets/regex_secrets.txt" 2>>"$ERR_LOG" || echo 0)
+  takeovers=$(wc -l < "$WORKDIR/09_vulns/takeovers_nuclei.txt" 2>>"$ERR_LOG" || echo 0)
 
   # Trim whitespace
   subs=$(echo "$subs" | tr -d ' ')
@@ -237,12 +254,12 @@ _generate_html_report() {
 
   # Build contents for sections
   local critical_content high_content takeover_content secrets_content chains_content hypotheses_content
-  critical_content=$(cat "$WORKDIR/09_vulns/nuclei_critical.txt" 2>/dev/null | head -50 | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "None detected.")
-  high_content=$(cat "$WORKDIR/09_vulns/nuclei_high.txt" 2>/dev/null | head -50 | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "None detected.")
-  takeover_content=$(cat "$WORKDIR/09_vulns/takeovers_nuclei.txt" 2>/dev/null | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "None detected.")
-  secrets_content=$(head -20 "$WORKDIR/11_secrets/regex_secrets.txt" 2>/dev/null | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "None detected.")
-  chains_content=$(cat "$WORKDIR/intelligence/bug_chains.txt" 2>/dev/null | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "No chains detected.")
-  hypotheses_content=$(cat "$WORKDIR/intelligence/hypotheses.txt" 2>/dev/null | head -100 | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "No hypotheses generated.")
+  critical_content=$(cat "$WORKDIR/09_vulns/nuclei_critical.txt" 2>>"$ERR_LOG" | head -50 | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "None detected.")
+  high_content=$(cat "$WORKDIR/09_vulns/nuclei_high.txt" 2>>"$ERR_LOG" | head -50 | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "None detected.")
+  takeover_content=$(cat "$WORKDIR/09_vulns/takeovers_nuclei.txt" 2>>"$ERR_LOG" | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "None detected.")
+  secrets_content=$(head -20 "$WORKDIR/11_secrets/regex_secrets.txt" 2>>"$ERR_LOG" | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "None detected.")
+  chains_content=$(cat "$WORKDIR/intelligence/bug_chains.txt" 2>>"$ERR_LOG" | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "No chains detected.")
+  hypotheses_content=$(cat "$WORKDIR/intelligence/hypotheses.txt" 2>>"$ERR_LOG" | head -100 | sed 's/</\&lt;/g;s/>/\&gt;/g' || echo "No hypotheses generated.")
 
   cat > "$WORKDIR/reports/summary.html" <<'HTMLEOF'
 <!DOCTYPE html>

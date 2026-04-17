@@ -105,6 +105,7 @@ handle_interrupt() {
 
   if [ -n "${WORKDIR:-}" ] && [ -n "${CURRENT_PHASE:-}" ] && [ -f "${WORKDIR}/meta/state.json" ]; then
     state_mark_failed "$CURRENT_PHASE" "Interrupted by user ($signal_name)" 2>/dev/null || true
+    state_clear_running "$CURRENT_PHASE" 2>/dev/null || true
   fi
 
   stop_child_processes_gracefully
@@ -311,31 +312,32 @@ check_previous_run() {
 
 # ─── RUN ALL PHASES ──────────────────────────────────────────
 run_all_phases() {
-  # Phase 01-15: Recon phases
-  run_phase "subdomains" "subdomains_run"
-  run_phase "dns" "dns_resolution"
-  run_phase "probe" "probe_hosts"
-  run_phase "ports" "port_scan"
-  run_phase "urls" "collect_urls"
+  # Critical foundational phases: stop pipeline on failure.
+  run_phase "subdomains" "subdomains_run" || return 1
+  run_phase "dns" "dns_resolution" || return 1
+  run_phase "probe" "probe_hosts" || return 1
+  run_phase "ports" "port_scan" || return 1
+  run_phase "urls" "collect_urls" || return 1
 
   # Intelligence phases run after Phase 05 (non-blocking)
-  run_phase "analyzer" "analyze_responses"
-  run_phase "hypothesis" "generate_hypotheses"
+  run_phase "analyzer" "analyze_responses" || log warn "Analyzer phase failed; continuing"
+  run_phase "hypothesis" "generate_hypotheses" || log warn "Hypothesis phase failed; continuing"
 
-  run_phase "content" "content_discovery"
-  run_phase "js" "js_analysis"
-  run_phase "params" "param_discovery"
-  run_phase "vulns" "nuclei_scan"
-  run_phase "cloud" "cloud_enum"
-  run_phase "secrets" "secret_scan"
-  run_phase "screenshots" "take_screenshots"
-  run_phase "api" "api_discovery"
-  run_phase "github" "github_dorking"
-  run_phase "origins" "origin_ip_hunt"
+  # Critical reconnaissance phases: stop pipeline on failure.
+  run_phase "content" "content_discovery" || return 1
+  run_phase "js" "js_analysis" || return 1
+  run_phase "params" "param_discovery" || return 1
+  run_phase "vulns" "nuclei_scan" || return 1
+  run_phase "cloud" "cloud_enum" || return 1
+  run_phase "secrets" "secret_scan" || return 1
+  run_phase "screenshots" "take_screenshots" || return 1
+  run_phase "api" "api_discovery" || return 1
+  run_phase "github" "github_dorking" || return 1
+  run_phase "origins" "origin_ip_hunt" || return 1
 
-  # Intelligence: post-scan phases
-  run_phase "chaining" "chain_analysis"
-  run_phase "scoring" "score_targets"
+  # Critical post-scan intelligence/reporting phases.
+  run_phase "chaining" "chain_analysis" || return 1
+  run_phase "scoring" "score_targets" || return 1
 
   # Differential recon
   diff_assets
@@ -346,10 +348,10 @@ run_all_phases() {
   fi
 
   # Decision engine
-  run_phase "decision" "decision_engine"
+  run_phase "decision" "decision_engine" || return 1
 
   # Final: Reporting
-  run_phase "reporting" "generate_report"
+  run_phase "reporting" "generate_report" || return 1
 }
 
 # ─── HANDLE DOMAIN LIST MODE ────────────────────────────────
@@ -376,7 +378,10 @@ run_for_list() {
 
     TARGET="$domain"
     init_workspace
-    run_all_phases
+    if ! run_all_phases; then
+      log error "Recon failed for $domain due to critical phase failure. Stopping list run."
+      return 1
+    fi
     print_dashboard
 
   done < "$list_file"
@@ -430,7 +435,10 @@ main() {
   echo "Start: $(date)" >> "$WORKDIR/meta/execution.log"
 
   # Run phases
-  run_all_phases
+  if ! run_all_phases; then
+    log error "Recon stopped due to critical phase failure."
+    exit 1
+  fi
 
   # Calculate total time
   local end_time elapsed_total
@@ -448,4 +456,6 @@ main() {
 }
 
 # ─── ENTRY POINT ─────────────────────────────────────────────
-main "$@"
+if [ "${RECON_NO_MAIN:-0}" != "1" ]; then
+  main "$@"
+fi
